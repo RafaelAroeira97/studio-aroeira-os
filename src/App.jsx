@@ -240,6 +240,16 @@ export default function StudioAroeiraOS() {
   const [sincronizando, setSincronizando] = useState(false);
   const [modelos, setModelos] = useState([]);
   const [historicoFinanceiro, setHistoricoFinanceiro] = useState([]);
+  const [despesasFixas, setDespesasFixas] = useState({
+    salario: 0,
+    aluguel: 0,
+    energia: 0,
+    trafegoPago: 0,
+    contador: 0,
+    faxina: 0,
+    agua: 0,
+    internet: 0,
+  });
   const [editandoModelo, setEditandoModelo] = useState(null);
   const [notificacoes, setNotificacoes] = useState([]);
   const [ultimaVista, setUltimaVista] = useState(0);
@@ -324,6 +334,10 @@ export default function StudioAroeiraOS() {
         }
       } catch (e) {}
       try {
+        const df = await storage.get("despesas-fixas", true);
+        if (df) setDespesasFixas(JSON.parse(df.value));
+      } catch (e) {}
+      try {
         const nt = await storage.get("notificacoes", true);
         if (nt) setNotificacoes(JSON.parse(nt.value));
       } catch (e) {}
@@ -391,6 +405,14 @@ export default function StudioAroeiraOS() {
     } catch (e) {}
   }, []);
 
+  const salvarDespesasFixas = useCallback(async (novas) => {
+    setDespesasFixas(novas);
+    try {
+      await storage.set("despesas-fixas", JSON.stringify(novas), true);
+      mostrarSalvo();
+    } catch (e) {}
+  }, []);
+
   const registrarNotificacao = useCallback((tipo, mensagem) => {
     setNotificacoes((atual) => {
       const nova = { id: uid(), tipo, mensagem, por: usuario?.nome || "alguém", em: Date.now() };
@@ -419,6 +441,12 @@ export default function StudioAroeiraOS() {
       valorPorLook: 0,
       infoEspecial: "",
       foto: "",
+      fotoPosicaoY: 50,
+      whatsapp: "",
+      instagram: "",
+      linkDrive: "",
+      responsavelNome: "",
+      responsavelParentesco: "",
     });
 
   const editarModelo = (m) => setEditandoModelo({ ...m });
@@ -447,7 +475,7 @@ export default function StudioAroeiraOS() {
 
   const entrar = useCallback(async (perfil) => {
     setUsuario(perfil);
-    setTab(perfil.papel === "admin" ? "dashboard" : "producoes");
+    setTab(perfil.papel === "admin" ? "dashboard" : "painel");
     try {
       await storage.set("sessao-usuario-id", perfil.id, false);
     } catch (e) {}
@@ -493,9 +521,11 @@ export default function StudioAroeiraOS() {
       cliente: "",
       modelo: "",
       modeloId: "",
+      modelosSlots: [{ modeloId: "", modelo: "" }],
       data: hoje(),
       horario: "09:00",
       tipo: "",
+      segmento: "",
       looks: 0,
       looksFeminino: 0,
       looksMasculino: 0,
@@ -513,6 +543,8 @@ export default function StudioAroeiraOS() {
       fotografo: "",
       filmmaker: "",
       editor: "",
+      editorVideo: "",
+      temVideo: false,
       storymaker: "",
       status: "Agendado",
       pagamentoStatus: "Em aberto",
@@ -620,17 +652,19 @@ export default function StudioAroeiraOS() {
   };
 
   // ---- derivações ----
+  const minhasProducoes = useMemo(() => {
+    if (isAdmin || !usuario) return producoes;
+    const meuNome = usuario.nome.trim().toLowerCase();
+    return producoes.filter((p) =>
+      [p.fotografo, p.filmmaker, p.editor, p.editorVideo, p.storymaker]
+        .filter(Boolean)
+        .some((n) => n.trim().toLowerCase() === meuNome)
+    );
+  }, [producoes, isAdmin, usuario]);
+
   const producoesFiltradas = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    let base = [...producoes].sort((a, b) => (a.data < b.data ? 1 : -1));
-    if (!isAdmin && usuario) {
-      const meuNome = usuario.nome.trim().toLowerCase();
-      base = base.filter((p) =>
-        [p.fotografo, p.filmmaker, p.editor, p.storymaker]
-          .filter(Boolean)
-          .some((n) => n.trim().toLowerCase() === meuNome)
-      );
-    }
+    let base = [...minhasProducoes].sort((a, b) => (a.data < b.data ? 1 : -1));
     if (!q) return base;
     return base.filter(
       (p) =>
@@ -638,7 +672,7 @@ export default function StudioAroeiraOS() {
         (p.modelo || "").toLowerCase().includes(q) ||
         (p.tipo || "").toLowerCase().includes(q)
     );
-  }, [producoes, busca, isAdmin, usuario]);
+  }, [minhasProducoes, busca]);
 
   const clientes = useMemo(() => {
     const maisFrequente = (arr) => {
@@ -691,6 +725,8 @@ export default function StudioAroeiraOS() {
           segmentos: cadastro.segmentos || [],
           publico: cadastro.publico || [],
           valorMensal: cadastro.valorMensal || 0,
+          apenasMensal: cadastro.apenasMensal || false,
+          statusRecorrente: cadastro.statusRecorrente || "Em aberto",
           observacoes: cadastro.observacoes || "",
           alerta,
         };
@@ -899,7 +935,8 @@ export default function StudioAroeiraOS() {
 
       <main style={{ flex: 1, padding: "18px 16px calc(env(safe-area-inset-bottom, 0px) + 96px)", maxWidth: 1180, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
         {isAdmin && tab === "dashboard" && <Dashboard producoes={producoes} precos={precos} clientes={clientes} historicoFinanceiro={historicoFinanceiro} />}
-        {isAdmin && tab === "quadro" && <Quadro producoes={producoes} onStatusChange={mudarStatus} />}
+        {tab === "quadro" && <Quadro producoes={isAdmin ? producoes : minhasProducoes} onStatusChange={mudarStatus} />}
+        {!isAdmin && tab === "painel" && <PainelEquipe producoes={minhasProducoes} usuario={usuario} />}
         {tab === "producoes" && (
           <Producoes
             producoes={producoesFiltradas}
@@ -924,6 +961,9 @@ export default function StudioAroeiraOS() {
             clientesCadastro={clientesCadastro}
             historicoFinanceiro={historicoFinanceiro}
             salvarHistoricoFinanceiro={salvarHistoricoFinanceiro}
+            despesasFixas={despesasFixas}
+            salvarDespesasFixas={salvarDespesasFixas}
+            modelos={modelos}
           />
         )}
         {isAdmin && tab === "crm" && (
@@ -974,6 +1014,8 @@ export default function StudioAroeiraOS() {
           setProducao={setEditando}
           onSalvar={salvarEdicao}
           modelos={modelos}
+          segmentosDisponiveis={segmentosDisponiveis}
+          perfis={perfis}
           onFechar={() => {
             setEditando(null);
             setErro("");
@@ -1044,7 +1086,7 @@ export default function StudioAroeiraOS() {
               ["modelos", "🧍", "Modelos"],
               ["config", "⚙️", "Ajustes"],
             ]
-          : [["producoes", "🎬", "Minhas produções"]]
+          : [["painel", "📊", "Painel"], ["producoes", "🎬", "Minhas produções"], ["quadro", "🗂️", "Quadro"]]
         ).map(([key, icon, label]) => (
           <button
             key={key}
@@ -1115,6 +1157,80 @@ function SecaoRecolhivel({ titulo, aberto, onToggle, extra, children }) {
   );
 }
 
+// ---------- Painel da equipe (sem valores) ----------
+function PainelEquipe({ producoes, usuario }) {
+  const t = hoje();
+  const [detalhe, setDetalhe] = useState(null);
+
+  const inicioSemana = new Date();
+  inicioSemana.setDate(inicioSemana.getDate() - inicioSemana.getDay());
+  const isoSemana = inicioSemana.toISOString().slice(0, 10);
+  const fimSemana = new Date(inicioSemana);
+  fimSemana.setDate(fimSemana.getDate() + 6);
+  const isoFimSemana = fimSemana.toISOString().slice(0, 10);
+
+  const semana = producoes.filter((p) => p.data >= isoSemana && p.data <= isoFimSemana);
+  const entregasPendentes = producoes.filter((p) => !["Entregue", "Finalizado"].includes(p.status) && p.prazo <= t);
+
+  const listaEnsaios = (lista) =>
+    lista
+      .slice()
+      .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1))
+      .map((p) => [p.cliente, fmtData(p.data), p.horario || "—", p.status]);
+
+  return (
+    <div>
+      <p className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", marginBottom: 16 }}>
+        Olá, {usuario.nome} — aqui está sua semana.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px,1fr))", gap: 12, marginBottom: 26 }}>
+        <StatCard
+          label="Ensaios da semana"
+          value={semana.length}
+          onClick={() => setDetalhe({ titulo: "Meus ensaios desta semana", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(semana) })}
+        />
+        <StatCard
+          label="Entregas pendentes"
+          value={entregasPendentes.length}
+          accent="#B9862E"
+          onClick={() => setDetalhe({ titulo: "Minhas entregas pendentes", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(entregasPendentes) })}
+        />
+      </div>
+
+      {detalhe && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setDetalhe(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%", maxHeight: "82vh", overflowY: "auto" }}>
+            <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0, marginBottom: 14 }}>{detalhe.titulo}</h3>
+            {detalhe.linhas.length === 0 ? (
+              <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center", padding: 16 }}>Nada por aqui — tudo em dia 🎉</p>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: "left", borderBottom: "1px solid #E4D9C4" }}>
+                    {detalhe.colunas.map((c) => (
+                      <th key={c} className="font-mono" style={{ padding: "8px 10px", color: "#8A7F6E", fontWeight: 500, fontSize: 10.5, textTransform: "uppercase" }}>{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {detalhe.linhas.map((linha, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #F0E8D6" }}>
+                      {linha.map((v, j) => <td key={j} style={{ padding: "7px 10px" }}>{v}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setDetalhe(null)} style={btnGhost}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
   const t = hoje();
   const [abertoSemana, setAbertoSemana] = useState(false);
@@ -1126,8 +1242,9 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
   const [anoSelecionado, setAnoSelecionado] = useState(t.slice(0, 4));
 
   const doDia = producoes.filter((p) => p.data === t);
-  const entregasPendentes = producoes.filter((p) => !["Entregue", "Finalizado"].includes(p.status));
-  const atrasadas = entregasPendentes.filter((p) => p.prazo < t);
+  const entregasPendentesTodas = producoes.filter((p) => !["Entregue", "Finalizado"].includes(p.status));
+  const entregasPendentesHoje = entregasPendentesTodas.filter((p) => p.prazo === t);
+  const atrasadas = entregasPendentesTodas.filter((p) => p.prazo < t);
   const pagamentosPendentes = producoes.filter((p) => ["Em aberto", "Parcialmente pago"].includes(p.pagamentoStatus));
   const pagamentosConcluidos = producoes.filter((p) => p.pagamentoStatus === "Pago");
 
@@ -1171,6 +1288,29 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
   if (!anosDisponiveis.includes(t.slice(0, 4))) anosDisponiveis.unshift(t.slice(0, 4));
 
   const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px,1fr))", gap: 12 };
+  const [detalhe, setDetalhe] = useState(null);
+
+  const agruparPorMarca = (lista, campo) => {
+    const mapa = {};
+    lista.forEach((p) => {
+      const qtd = Number(p[campo]) || 0;
+      if (qtd === 0) return;
+      mapa[p.cliente] = (mapa[p.cliente] || 0) + qtd;
+    });
+    return Object.entries(mapa).sort((a, b) => b[1] - a[1]).map(([marca, qtd]) => [marca, qtd]);
+  };
+
+  const listaValores = (lista) =>
+    lista
+      .slice()
+      .sort((a, b) => (a.data < b.data ? 1 : -1))
+      .map((p) => [p.cliente, fmtData(p.data), fmtBRL(totalProducao(p, precos))]);
+
+  const listaEnsaios = (lista) =>
+    lista
+      .slice()
+      .sort((a, b) => (a.data < b.data ? 1 : -1))
+      .map((p) => [p.cliente, fmtData(p.data), p.horario || "—", p.status]);
 
   // produtividade da equipe
   const nomesEquipe = Array.from(
@@ -1195,17 +1335,17 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
     <div>
       <SectionTitle title="Hoje" />
       <div style={{ ...grid, marginBottom: 26 }}>
-        <StatCard label="Ensaios do dia" value={doDia.length} />
-        <StatCard label="Entregas pendentes" value={entregasPendentes.length} accent="#B9862E" />
-        <StatCard label="Pagamentos pendentes" value={pagamentosPendentes.length} accent="#B9862E" />
-        <StatCard label="Pagamentos concluídos" value={pagamentosConcluidos.length} accent="#566B4F" />
+        <StatCard label="Ensaios do dia" value={doDia.length} onClick={() => setDetalhe({ titulo: "Ensaios de hoje", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(doDia) })} />
+        <StatCard label="Entregas pendentes" value={entregasPendentesHoje.length} accent="#B9862E" onClick={() => setDetalhe({ titulo: "Entregas pendentes de hoje", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(entregasPendentesHoje) })} />
+        <StatCard label="Pagamentos pendentes" value={pagamentosPendentes.length} accent="#B9862E" onClick={() => setDetalhe({ titulo: "Pagamentos pendentes", colunas: ["Marca", "Data", "Valor"], linhas: listaValores(pagamentosPendentes) })} />
+        <StatCard label="Pagamentos concluídos" value={pagamentosConcluidos.length} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Pagamentos concluídos", colunas: ["Marca", "Data", "Valor"], linhas: listaValores(pagamentosConcluidos) })} />
       </div>
 
       <SecaoRecolhivel titulo="Semana" aberto={abertoSemana} onToggle={() => setAbertoSemana(!abertoSemana)}>
         <div style={grid}>
-          <StatCard label="Produções realizadas" value={semana.length} />
-          <StatCard label="Faturamento previsto" value={fmtBRL(faturamentoPrevistoSemana)} accent="#566B4F" />
-          <StatCard label="Finalizadas" value={concluidasSemana} accent="#566B4F" />
+          <StatCard label="Produções realizadas" value={semana.length} onClick={() => setDetalhe({ titulo: "Produções da semana", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(semana) })} />
+          <StatCard label="Faturamento previsto" value={fmtBRL(faturamentoPrevistoSemana)} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Faturamento previsto da semana", colunas: ["Marca", "Data", "Valor"], linhas: listaValores(semana) })} />
+          <StatCard label="Finalizadas" value={concluidasSemana} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Finalizadas na semana", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(semana.filter((p) => p.status === "Finalizado")) })} />
         </div>
       </SecaoRecolhivel>
 
@@ -1223,11 +1363,11 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
         }
       >
         <div style={grid}>
-          <StatCard label="Lookbook" value={totalLooksMes} />
-          <StatCard label="Criativos de vídeo" value={totalLookbooksMes} />
-          <StatCard label="Vídeos lookbook" value={totalVideosMes} />
-          <StatCard label="Faturado" value={fmtBRL(faturadoMes)} accent="#7A2E22" sub={historicoDoMes > 0 ? `inclui ${fmtBRL(historicoDoMes)} de faturamento histórico` : null} />
-          <StatCard label="Recebido" value={fmtBRL(recebidoMes)} accent="#566B4F" />
+          <StatCard label="Lookbook" value={totalLooksMes} onClick={() => setDetalhe({ titulo: "Lookbook — por marca (mês)", colunas: ["Marca", "Quantidade de lookbook"], linhas: agruparPorMarca(doMes, "looks") })} />
+          <StatCard label="Criativos de vídeo" value={totalLookbooksMes} onClick={() => setDetalhe({ titulo: "Criativos de vídeo — por marca (mês)", colunas: ["Marca", "Quantidade"], linhas: agruparPorMarca(doMes, "lookbooks") })} />
+          <StatCard label="Vídeos lookbook" value={totalVideosMes} onClick={() => setDetalhe({ titulo: "Vídeos lookbook — por marca (mês)", colunas: ["Marca", "Quantidade"], linhas: agruparPorMarca(doMes, "videos") })} />
+          <StatCard label="Faturado" value={fmtBRL(faturadoMes)} accent="#7A2E22" sub={historicoDoMes > 0 ? `inclui ${fmtBRL(historicoDoMes)} de faturamento mensal` : null} onClick={() => setDetalhe({ titulo: "Faturado — por produção (mês)", colunas: ["Marca", "Data", "Valor"], linhas: listaValores(doMes) })} />
+          <StatCard label="Recebido" value={fmtBRL(recebidoMes)} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Recebido — por produção (mês)", colunas: ["Marca", "Data", "Valor"], linhas: listaValores(doMes.filter((p) => p.pagamentoStatus === "Pago")) })} />
         </div>
       </SecaoRecolhivel>
 
@@ -1242,11 +1382,11 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
         }
       >
         <div style={{ ...grid, marginBottom: 14 }}>
-          <StatCard label="Lookbook" value={totalLooksAno} />
-          <StatCard label="Criativos de vídeo" value={totalLookbooksAno} />
-          <StatCard label="Vídeos lookbook" value={totalVideosAno} />
-          <StatCard label="Faturado" value={fmtBRL(faturadoAno)} accent="#7A2E22" sub={historicoDoAno > 0 ? `inclui ${fmtBRL(historicoDoAno)} de faturamento histórico` : null} />
-          <StatCard label="Recebido" value={fmtBRL(recebidoAno)} accent="#566B4F" />
+          <StatCard label="Lookbook" value={totalLooksAno} onClick={() => setDetalhe({ titulo: "Lookbook — por marca (ano)", colunas: ["Marca", "Quantidade de lookbook"], linhas: agruparPorMarca(doAno, "looks") })} />
+          <StatCard label="Criativos de vídeo" value={totalLookbooksAno} onClick={() => setDetalhe({ titulo: "Criativos de vídeo — por marca (ano)", colunas: ["Marca", "Quantidade"], linhas: agruparPorMarca(doAno, "lookbooks") })} />
+          <StatCard label="Vídeos lookbook" value={totalVideosAno} onClick={() => setDetalhe({ titulo: "Vídeos lookbook — por marca (ano)", colunas: ["Marca", "Quantidade"], linhas: agruparPorMarca(doAno, "videos") })} />
+          <StatCard label="Faturado" value={fmtBRL(faturadoAno)} accent="#7A2E22" sub={historicoDoAno > 0 ? `inclui ${fmtBRL(historicoDoAno)} de faturamento mensal` : null} onClick={() => setDetalhe({ titulo: "Faturado — por produção (ano)", colunas: ["Marca", "Data", "Valor"], linhas: listaValores(doAno) })} />
+          <StatCard label="Recebido" value={fmtBRL(recebidoAno)} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Recebido — por produção (ano)", colunas: ["Marca", "Data", "Valor"], linhas: listaValores(doAno.filter((p) => p.pagamentoStatus === "Pago")) })} />
         </div>
         <Card style={{ padding: 16 }}>
           <div style={{ width: "100%", height: 220 }}>
@@ -1302,6 +1442,39 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
           <AlertaLinha cor="#566B4F" texto={`${concluidasSemana} produção(ões) concluída(s) esta semana`} />
         </div>
       </SecaoRecolhivel>
+
+      {detalhe && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setDetalhe(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 480, width: "100%", maxHeight: "82vh", overflowY: "auto" }}>
+            <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0, marginBottom: 14 }}>{detalhe.titulo}</h3>
+            {detalhe.linhas.length === 0 ? (
+              <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center", padding: 16 }}>Nada por aqui.</p>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: "left", borderBottom: "1px solid #E4D9C4" }}>
+                    {detalhe.colunas.map((c) => (
+                      <th key={c} className="font-mono" style={{ padding: "8px 10px", color: "#8A7F6E", fontWeight: 500, fontSize: 10.5, textTransform: "uppercase" }}>{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {detalhe.linhas.map((linha, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid #F0E8D6" }}>
+                      {linha.map((v, j) => (
+                        <td key={j} style={{ padding: "7px 10px", fontWeight: j === linha.length - 1 ? 600 : 400 }}>{v}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setDetalhe(null)} style={btnGhost}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1326,11 +1499,21 @@ function SectionTitle({ title }) {
 // ---------- Quadro ----------
 function Quadro({ producoes, onStatusChange }) {
   const [aberto, setAberto] = useState(null);
-  const ordenadas = [...producoes].sort((a, b) => (a.data < b.data ? 1 : -1));
+
+  const inicioSemana = new Date();
+  inicioSemana.setDate(inicioSemana.getDate() - inicioSemana.getDay());
+  const isoInicioSemana = inicioSemana.toISOString().slice(0, 10);
+  const fimSemana = new Date(inicioSemana);
+  fimSemana.setDate(fimSemana.getDate() + 6);
+  const isoFimSemana = fimSemana.toISOString().slice(0, 10);
+
+  const ordenadas = producoes
+    .filter((p) => p.data >= isoInicioSemana && p.data <= isoFimSemana && p.status !== "Finalizado")
+    .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1));
 
   return (
     <div>
-      <SectionTitle title="Panorama geral" />
+      <SectionTitle title="Panorama geral — ensaios desta semana" />
       <div style={{ display: "grid", gap: 10 }}>
         {ordenadas.map((p) => {
           const expandido = aberto === p.id;
@@ -1429,7 +1612,7 @@ function Quadro({ producoes, onStatusChange }) {
         })}
         {ordenadas.length === 0 && (
           <Card style={{ padding: 28, textAlign: "center", color: "#8A7F6E" }}>
-            Nenhuma produção cadastrada ainda.
+            Nenhum ensaio agendado pra essa semana (ou já foram todos finalizados 🎉).
           </Card>
         )}
       </div>
@@ -1445,7 +1628,7 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
 
   const responsaveis = Array.from(
     new Set(
-      producoes.flatMap((p) => [p.fotografo, p.filmmaker, p.editor, p.storymaker]).filter(Boolean)
+      producoes.flatMap((p) => [p.fotografo, p.filmmaker, p.editor, p.editorVideo, p.storymaker]).filter(Boolean)
     )
   ).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
@@ -1456,11 +1639,13 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
     } else if (filtroStatus && p.status !== filtroStatus) {
       return false;
     }
-    if (filtroResponsavel && ![p.fotografo, p.filmmaker, p.editor, p.storymaker].includes(filtroResponsavel)) {
+    if (filtroResponsavel && ![p.fotografo, p.filmmaker, p.editor, p.editorVideo, p.storymaker].includes(filtroResponsavel)) {
       return false;
     }
     return true;
   });
+
+  const [expandidoId, setExpandidoId] = useState(null);
 
   return (
     <div>
@@ -1521,128 +1706,152 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
         </Card>
       )}
 
-      <div style={{ display: "grid", gap: 14 }}>
-        {producoesExibidas.map((p) => (
-          <Card key={p.id} style={{ padding: 18 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <div className="font-display" style={{ fontSize: 18, fontWeight: 600 }}>
-                  {p.cliente} {p.modelo && <span style={{ color: "#8A7F6E", fontWeight: 400 }}>· {p.modelo}</span>}
+      <div style={{ display: "grid", gap: 10 }}>
+        {producoesExibidas.map((p) => {
+          const expandido = expandidoId === p.id;
+          return (
+            <Card key={p.id} style={{ padding: 16 }}>
+              <div
+                onClick={() => setExpandidoId(expandido ? null : p.id)}
+                style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, cursor: "pointer" }}
+              >
+                <div>
+                  <div className="font-display" style={{ fontSize: 17, fontWeight: 600 }}>
+                    {p.cliente} {p.modelo && <span style={{ color: "#8A7F6E", fontWeight: 400 }}>· {p.modelo}</span>}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#8A7F6E", marginTop: 2 }}>
+                    {fmtData(p.data)} às {p.horario}
+                    {p.localizacao && <> · 📍 {p.localizacao}</>}
+                  </div>
                 </div>
-                <div style={{ fontSize: 13, color: "#8A7F6E", marginTop: 2 }}>
-                  {fmtData(p.data)} às {p.horario} · {p.tipo || "sem tipo definido"} · prazo {fmtData(p.prazo)}
-                  {p.localizacao && <> · 📍 {p.localizacao}</>}
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <select
-                  value={p.status}
-                  onChange={(e) => onStatusChange(p.id, e.target.value)}
-                  className="font-mono"
-                  style={{
-                    fontSize: 11,
-                    letterSpacing: "0.04em",
-                    textTransform: "uppercase",
-                    padding: "4px 8px",
-                    borderRadius: 999,
-                    border: "1px solid " + (STATUS_COR[p.status] || "#8A7F6E"),
-                    color: STATUS_COR[p.status] || "#8A7F6E",
-                    background: "transparent",
-                  }}
-                >
-                  {STATUS_PRODUCAO.map((s) => <option key={s}>{s}</option>)}
-                </select>
-                {isAdmin && (
-                  <Badge color={p.pagamentoStatus === "Pago" ? "#566B4F" : "#B9862E"}>{p.pagamentoStatus}</Badge>
-                )}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 12, fontSize: 13.5 }}>
-              <span>👤 fotógrafo: <b>{p.fotografo || "—"}</b></span>
-              <span>🎬 filmmaker: <b>{p.filmmaker || "—"}</b></span>
-              <span>🖥️ editor: <b>{p.editor || "—"}</b></span>
-              <span>📝 storymaker: <b>{p.storymaker || "—"}</b></span>
-              <span className="font-mono">
-                {p.looks || 0} lookbook
-                {(Number(p.looksFeminino) || Number(p.looksMasculino) || Number(p.looksKids)) > 0 && (
-                  <> ({[p.looksFeminino > 0 && `${p.looksFeminino} fem`, p.looksMasculino > 0 && `${p.looksMasculino} masc`, p.looksKids > 0 && `${p.looksKids} kids`].filter(Boolean).join(" · ")})</>
-                )}
-                {" · "}{p.lookbooks || 0} criativos de vídeo · {p.videos || 0} vídeos lookbook
-                {(Number(p.qtdPrato) > 0 || Number(p.qtdFotoCorporativa) > 0) && (
-                  <>
-                    {p.qtdPrato > 0 && <> · {p.qtdPrato} prato(s)</>}
-                    {p.qtdFotoCorporativa > 0 && <> · {p.qtdFotoCorporativa} foto(s) corporativa(s)</>}
-                  </>
-                )}
-              </span>
-              {isAdmin && (
-                <span className="font-display" style={{ color: "#7A2E22", fontWeight: 600 }}>{fmtBRL(totalProducao(p, precos))}</span>
-              )}
-            </div>
-
-            <div style={{ marginTop: 8 }}>
-              {p.linkDrive ? (
-                <a
-                  href={p.linkDrive}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-mono"
-                  style={{ fontSize: 11.5, color: "#7A2E22", textDecoration: "none" }}
-                >
-                  📁 Abrir pasta no Drive
-                </a>
-              ) : (
-                <span className="font-mono" style={{ fontSize: 11.5, color: "#8A7F6E" }}>
-                  📁 {pastaDrive(p)} <span style={{ opacity: 0.7 }}>(pasta ainda não vinculada)</span>
-                </span>
-              )}
-            </div>
-
-            {p.tasks && p.tasks.length > 0 && (
-              <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {p.tasks.map((t) => (
-                  <label
-                    key={t.id}
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+                  <select
+                    value={p.status}
+                    onChange={(e) => onStatusChange(p.id, e.target.value)}
+                    className="font-mono"
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontSize: 12.5,
-                      padding: "4px 10px",
+                      fontSize: 11,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase",
+                      padding: "4px 8px",
                       borderRadius: 999,
-                      background: t.done ? "#E7EEE3" : "#F2ECDD",
-                      color: t.done ? "#3F4F3A" : "#6B6153",
-                      textDecoration: t.done ? "line-through" : "none",
-                      cursor: "pointer",
+                      border: "1px solid " + (STATUS_COR[p.status] || "#8A7F6E"),
+                      color: STATUS_COR[p.status] || "#8A7F6E",
+                      background: "transparent",
                     }}
                   >
-                    <input type="checkbox" checked={t.done} onChange={() => onToggleTask(p.id, t.id)} />
-                    {t.label}
-                  </label>
-                ))}
+                    {STATUS_PRODUCAO.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                  <span style={{ color: "#B0A388", fontSize: 12, transform: expandido ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▾</span>
+                </div>
               </div>
-            )}
 
-            <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <a
-                href={linkGoogleAgenda(p)}
-                target="_blank"
-                rel="noreferrer"
-                style={{ ...btnGhost, textDecoration: "none", display: "inline-block" }}
-              >
-                📅 Google Agenda
-              </a>
-              {isAdmin && (
-                <>
-                  <button onClick={() => onEditar(p)} style={btnGhost}>Editar</button>
-                  <button onClick={() => onDuplicar(p)} style={btnGhost}>Duplicar</button>
-                  <button onClick={() => setExcluindo(p)} style={{ ...btnGhost, color: "#A83B2E" }}>Excluir</button>
-                </>
+              {expandido && (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #F0E8D6" }}>
+                  <div style={{ fontSize: 13, color: "#8A7F6E", marginBottom: 10 }}>
+                    {p.tipo || "sem tipo definido"} · prazo {fmtData(p.prazo)}
+                    {p.segmento && <> · segmento: {p.segmento}</>}
+                  </div>
+
+                  {isAdmin && (
+                    <div style={{ marginBottom: 8 }}>
+                      <Badge color={p.pagamentoStatus === "Pago" ? "#566B4F" : "#B9862E"}>{p.pagamentoStatus}</Badge>
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: 22, flexWrap: "wrap", fontSize: 13.5 }}>
+                    <span>👤 fotógrafo: <b>{p.fotografo || "—"}</b></span>
+                    <span>🖥️ editor de foto: <b>{p.editor || "—"}</b></span>
+                    {p.temVideo && (
+                      <>
+                        <span>🎬 filmmaker: <b>{p.filmmaker || "—"}</b></span>
+                        <span>🎞️ editor de vídeo: <b>{p.editorVideo || "—"}</b></span>
+                      </>
+                    )}
+                    <span>📝 storymaker: <b>{p.storymaker || "—"}</b></span>
+                    <span className="font-mono">
+                      {p.looks || 0} lookbook
+                      {(Number(p.looksFeminino) || Number(p.looksMasculino) || Number(p.looksKids)) > 0 && (
+                        <> ({[p.looksFeminino > 0 && `${p.looksFeminino} fem`, p.looksMasculino > 0 && `${p.looksMasculino} masc`, p.looksKids > 0 && `${p.looksKids} kids`].filter(Boolean).join(" · ")})</>
+                      )}
+                      {" · "}{p.lookbooks || 0} criativos de vídeo · {p.videos || 0} vídeos lookbook
+                      {(Number(p.qtdPrato) > 0 || Number(p.qtdFotoCorporativa) > 0) && (
+                        <>
+                          {p.qtdPrato > 0 && <> · {p.qtdPrato} prato(s)</>}
+                          {p.qtdFotoCorporativa > 0 && <> · {p.qtdFotoCorporativa} foto(s) corporativa(s)</>}
+                        </>
+                      )}
+                    </span>
+                    {isAdmin && (
+                      <span className="font-display" style={{ color: "#7A2E22", fontWeight: 600 }}>{fmtBRL(totalProducao(p, precos))}</span>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: 10 }}>
+                    {p.linkDrive ? (
+                      <a
+                        href={p.linkDrive}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-mono"
+                        style={{ fontSize: 11.5, color: "#7A2E22", textDecoration: "none" }}
+                      >
+                        📁 Abrir pasta no Drive
+                      </a>
+                    ) : (
+                      <span className="font-mono" style={{ fontSize: 11.5, color: "#8A7F6E" }}>
+                        📁 {pastaDrive(p)} <span style={{ opacity: 0.7 }}>(pasta ainda não vinculada)</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {p.tasks && p.tasks.length > 0 && (
+                    <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {p.tasks.map((t) => (
+                        <label
+                          key={t.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            fontSize: 12.5,
+                            padding: "4px 10px",
+                            borderRadius: 999,
+                            background: t.done ? "#E7EEE3" : "#F2ECDD",
+                            color: t.done ? "#3F4F3A" : "#6B6153",
+                            textDecoration: t.done ? "line-through" : "none",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <input type="checkbox" checked={t.done} onChange={() => onToggleTask(p.id, t.id)} />
+                          {t.label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <a
+                      href={linkGoogleAgenda(p)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ ...btnGhost, textDecoration: "none", display: "inline-block" }}
+                    >
+                      📅 Google Agenda
+                    </a>
+                    {isAdmin && (
+                      <>
+                        <button onClick={() => onEditar(p)} style={btnGhost}>Editar</button>
+                        <button onClick={() => onDuplicar(p)} style={btnGhost}>Duplicar</button>
+                        <button onClick={() => setExcluindo(p)} style={{ ...btnGhost, color: "#A83B2E" }}>Excluir</button>
+                      </>
+                    )}
+                  </div>
+                </div>
               )}
-            </div>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
       </div>
 
       {excluindo && (
@@ -1698,15 +1907,26 @@ const CORES_PUBLICO = {
   "Não informado": "#8A7F6E",
 };
 
-function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, salvarHistoricoFinanceiro }) {
+function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, salvarHistoricoFinanceiro, despesasFixas, salvarDespesasFixas, modelos }) {
+  const clientesApenasMensal = new Set(clientesCadastro.filter((c) => c.apenasMensal).map((c) => c.nome));
+  const producoesFaturaveis = producoes.filter((p) => !clientesApenasMensal.has(p.cliente));
+
   const totalHistorico = historicoFinanceiro.reduce((s, h) => s + (Number(h.valor) || 0), 0);
-  const total = producoes.reduce((s, p) => s + totalProducao(p, precos), 0) + totalHistorico;
-  const recebido = producoes
-    .filter((p) => p.pagamentoStatus === "Pago")
-    .reduce((s, p) => s + totalProducao(p, precos), 0) + totalHistorico;
-  const aberto = total - recebido;
   const receitaMensalRecorrente = clientesCadastro.reduce((s, c) => s + (Number(c.valorMensal) || 0), 0);
+  const recebidoRecorrente = clientesCadastro
+    .filter((c) => Number(c.valorMensal) > 0 && c.statusRecorrente === "Pago")
+    .reduce((s, c) => s + Number(c.valorMensal), 0);
   const marcasComContrato = clientesCadastro.filter((c) => Number(c.valorMensal) > 0).length;
+
+  const total = producoesFaturaveis.reduce((s, p) => s + totalProducao(p, precos), 0) + totalHistorico + receitaMensalRecorrente;
+  const recebido =
+    producoesFaturaveis.filter((p) => p.pagamentoStatus === "Pago").reduce((s, p) => s + totalProducao(p, precos), 0) +
+    totalHistorico +
+    recebidoRecorrente;
+  const aberto = total - recebido;
+
+  const totalDespesas = Object.values(despesasFixas || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+  const lucro = total - totalDespesas;
 
   const producoesReais = producoes.filter((p) => p.tipo !== "Histórico (importado)");
 
@@ -1739,24 +1959,103 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
   });
   const dadosCenario = Object.values(mapaCenario).sort((a, b) => b.receita - a.receita);
 
+  const mapaSegmento = {};
+  producoesReais.forEach((p) => {
+    const nome = (p.segmento || "").trim() || "Sem segmento definido";
+    if (!mapaSegmento[nome]) mapaSegmento[nome] = { segmento: nome, usos: 0, receita: 0 };
+    mapaSegmento[nome].usos++;
+    mapaSegmento[nome].receita += totalProducao(p, precos);
+  });
+  const dadosSegmento = Object.values(mapaSegmento).sort((a, b) => b.receita - a.receita);
+
+  const mapaModelo = {};
+  producoesReais.forEach((p) => {
+    const nomesModelos = p.modelosSlots && p.modelosSlots.length ? p.modelosSlots.map((s) => s.modelo).filter(Boolean) : [p.modelo].filter(Boolean);
+    nomesModelos.forEach((nome) => {
+      const cadastro = (modelos || []).find((m) => m.nome === nome);
+      if (!mapaModelo[nome]) mapaModelo[nome] = { modelo: nome, producoes: 0, looks: (Number(p.looks) || 0), valorGerado: 0 };
+      mapaModelo[nome].producoes++;
+      if (cadastro) mapaModelo[nome].valorGerado += (Number(p.looks) || 0) * (Number(cadastro.valorPorLook) || 0);
+    });
+  });
+  const dadosPorModelo = Object.values(mapaModelo).sort((a, b) => b.valorGerado - a.valorGerado);
+
   const [editandoHistorico, setEditandoHistorico] = useState(null);
   const [excluindoHistorico, setExcluindoHistorico] = useState(null);
+  const [mostrarAberto, setMostrarAberto] = useState(false);
+  const [mostrarRecorrente, setMostrarRecorrente] = useState(false);
   const historicoOrdenado = [...historicoFinanceiro].sort((a, b) => (a.mes < b.mes ? 1 : -1));
 
   return (
     <div>
       <SectionTitle title="Resumo geral" />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px,1fr))", gap: 12, marginBottom: 26 }}>
-        <StatCard label="Faturado (total)" value={fmtBRL(total)} />
+        <StatCard label="Faturado (total)" value={fmtBRL(total)} sub={receitaMensalRecorrente > 0 ? `inclui ${fmtBRL(receitaMensalRecorrente)} recorrente` : null} />
         <StatCard label="Recebido" value={fmtBRL(recebido)} accent="#566B4F" />
-        <StatCard label="Em aberto" value={fmtBRL(aberto)} accent="#B9862E" />
+        <StatCard label="Em aberto" value={fmtBRL(aberto)} accent="#B9862E" onClick={() => setMostrarAberto(true)} />
+        <StatCard label="Despesas fixas (mês)" value={fmtBRL(totalDespesas)} accent="#A83B2E" />
+        <StatCard label="Lucro estimado" value={fmtBRL(lucro)} accent={lucro >= 0 ? "#566B4F" : "#A83B2E"} />
         {receitaMensalRecorrente > 0 && (
-          <StatCard label="Receita mensal recorrente" value={fmtBRL(receitaMensalRecorrente)} sub={`${marcasComContrato} marca(s) com contrato fixo`} accent="#7A2E22" />
+          <StatCard
+            label="Receita mensal recorrente"
+            value={fmtBRL(receitaMensalRecorrente)}
+            sub={`${marcasComContrato} marca(s) com contrato fixo — já incluída no faturado`}
+            accent="#7A2E22"
+            onClick={() => setMostrarRecorrente(true)}
+          />
         )}
       </div>
 
+      {mostrarAberto && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setMostrarAberto(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%", maxHeight: "82vh", overflowY: "auto" }}>
+            <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0 }}>Pagamentos em aberto</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              {producoesFaturaveis.filter((p) => ["Em aberto", "Parcialmente pago"].includes(p.pagamentoStatus)).map((p) => (
+                <Card key={p.id} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                  <span>{p.cliente} — {fmtData(p.data)}</span>
+                  <b>{fmtBRL(totalProducao(p, precos))}</b>
+                </Card>
+              ))}
+              {clientesCadastro.filter((c) => Number(c.valorMensal) > 0 && c.statusRecorrente !== "Pago").map((c) => (
+                <Card key={c.nome} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                  <span>{c.nome} — mensalidade</span>
+                  <b>{fmtBRL(c.valorMensal)}</b>
+                </Card>
+              ))}
+              {aberto === 0 && <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center" }}>Nada em aberto no momento 🎉</p>}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setMostrarAberto(false)} style={btnGhost}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mostrarRecorrente && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setMostrarRecorrente(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%", maxHeight: "82vh", overflowY: "auto" }}>
+            <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0 }}>Marcas com contrato mensal</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              {clientesCadastro.filter((c) => Number(c.valorMensal) > 0).map((c) => (
+                <Card key={c.nome} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                  <span>{c.nome}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <b>{fmtBRL(c.valorMensal)}</b>
+                    <Badge color={c.statusRecorrente === "Pago" ? "#566B4F" : "#B9862E"}>{c.statusRecorrente || "Em aberto"}</Badge>
+                  </span>
+                </Card>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setMostrarRecorrente(false)} style={btnGhost}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
-        <SectionTitle title="Faturamento histórico (antes do controle por produção)" />
+        <SectionTitle title="Faturamento mensal (antes do controle por produção)" />
         <button
           onClick={() => setEditandoHistorico({ novo: true, mes: hoje().slice(0, 7), valor: 0, observacao: "" })}
           style={{ ...btnPrimario, marginLeft: "auto", marginTop: 0 }}
@@ -1801,7 +2100,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setEditandoHistorico(null)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 380, width: "100%" }}>
             <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0 }}>
-              {editandoHistorico.novo ? "Adicionar faturamento histórico" : "Editar lançamento"}
+              {editandoHistorico.novo ? "Adicionar faturamento mensal" : "Editar lançamento"}
             </h3>
             <div style={{ display: "grid", gap: 10 }}>
               <Field label="Mês">
@@ -1856,7 +2155,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
       {excluindoHistorico && (
         <ConfirmarExclusao
           titulo="Excluir lançamento?"
-          mensagem={`Isso remove o faturamento histórico de "${excluindoHistorico.label || excluindoHistorico.mes}" (${fmtBRL(excluindoHistorico.valor)}).`}
+          mensagem={`Isso remove o faturamento mensal de "${excluindoHistorico.label || excluindoHistorico.mes}" (${fmtBRL(excluindoHistorico.valor)}).`}
           onCancelar={() => setExcluindoHistorico(null)}
           onConfirmar={() => {
             salvarHistoricoFinanceiro(historicoFinanceiro.filter((h) => h.id !== excluindoHistorico.id));
@@ -1948,6 +2247,110 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         </Card>
       )}
 
+      <SectionTitle title="Faturamento por segmento" />
+      <Card style={{ padding: 20, marginBottom: 12 }}>
+        {dadosSegmento.length === 0 ? (
+          <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center", margin: 0 }}>Nenhum segmento registrado ainda nas produções.</p>
+        ) : (
+          <div style={{ width: "100%", height: Math.max(160, Math.min(dadosSegmento.length, 10) * 36) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dadosSegmento.slice(0, 10)} layout="vertical" margin={{ left: 10, right: 24, top: 4, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E4D9C4" horizontal={false} />
+                <XAxis type="number" tickFormatter={(v) => fmtBRL(v)} tick={{ fontSize: 11, fill: "#8A7F6E" }} axisLine={{ stroke: "#DCCFB2" }} tickLine={false} />
+                <YAxis type="category" dataKey="segmento" width={130} tick={{ fontSize: 12, fill: "#2B2420" }} axisLine={{ stroke: "#DCCFB2" }} tickLine={false} />
+                <Tooltip formatter={(v) => fmtBRL(v)} contentStyle={{ fontSize: 12.5, borderRadius: 8, border: "1px solid #E4D9C4" }} />
+                <Bar dataKey="receita" fill="#566B4F" radius={[0, 4, 4, 0]} maxBarSize={22} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </Card>
+
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+        <SectionTitle title="Faturamento por modelo" />
+        {dadosPorModelo.length > 0 && (
+          <button
+            onClick={() => {
+              const linhas = [["Modelo", "Produções", "Looks", "Valor gerado (R$)"]];
+              dadosPorModelo.forEach((d) => linhas.push([d.modelo, d.producoes, d.looks, d.valorGerado.toFixed(2)]));
+              const csv = linhas.map((l) => l.map((c) => `"${c}"`).join(",")).join("\n");
+              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `faturamento-por-modelo-${hoje()}.csv`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              URL.revokeObjectURL(url);
+            }}
+            style={{ ...btnGhost, marginLeft: "auto" }}
+          >
+            ⬇ Exportar CSV
+          </button>
+        )}
+      </div>
+      <Card style={{ overflowX: "auto", marginBottom: 26 }}>
+        {dadosPorModelo.length === 0 ? (
+          <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center", padding: 20, margin: 0 }}>
+            Nenhum modelo cadastrado apareceu em produções ainda.
+          </p>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+            <thead>
+              <tr style={{ textAlign: "left", borderBottom: "1px solid #E4D9C4" }}>
+                {["Modelo", "Produções", "Looks", "Valor gerado pro modelo"].map((h) => (
+                  <th key={h} className="font-mono" style={{ padding: "10px 12px", color: "#8A7F6E", fontWeight: 500, fontSize: 11, textTransform: "uppercase" }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dadosPorModelo.map((d) => (
+                <tr key={d.modelo} style={{ borderBottom: "1px solid #F0E8D6" }}>
+                  <td style={{ padding: "9px 12px" }}>{d.modelo}</td>
+                  <td style={{ padding: "9px 12px" }}>{d.producoes}</td>
+                  <td style={{ padding: "9px 12px" }}>{d.looks}</td>
+                  <td style={{ padding: "9px 12px", fontWeight: 600 }}>{fmtBRL(d.valorGerado)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p style={{ fontSize: 11, color: "#8A7F6E", padding: "0 12px 12px", margin: 0 }}>
+          "Valor gerado" é uma estimativa (looks da produção × valor por look do modelo) — útil pra mostrar pra ela o tamanho da parceria, não é necessariamente o que foi pago.
+        </p>
+      </Card>
+
+      <SectionTitle title="Despesas fixas mensais" />
+      <Card style={{ padding: 18, marginBottom: 26, maxWidth: 480 }}>
+        <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
+          Custos fixos do estúdio, usados pra calcular o lucro estimado acima. Editáveis a qualquer momento.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {[
+            ["salario", "Salário"],
+            ["aluguel", "Aluguel"],
+            ["energia", "Energia"],
+            ["trafegoPago", "Tráfego pago"],
+            ["contador", "Contador"],
+            ["faxina", "Faxina"],
+            ["agua", "Água"],
+            ["internet", "Internet"],
+          ].map(([chave, label]) => (
+            <Field key={chave} label={label}>
+              <input
+                type="number"
+                style={inputStyle}
+                value={despesasFixas[chave] || 0}
+                onChange={(e) => salvarDespesasFixas({ ...despesasFixas, [chave]: Number(e.target.value) })}
+              />
+            </Field>
+          ))}
+        </div>
+      </Card>
+
       <SectionTitle title="Lançamentos" />
       <Card style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
@@ -2010,9 +2413,9 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
   const [buscaCliente, setBuscaCliente] = useState("");
   const [filtroSegmento, setFiltroSegmento] = useState("");
 
-  const abrirNovoCliente = () => setEditandoContato({ novo: true, nome: "", telefone: "", email: "", instagram: "", linkDrive: "", segmentos: [], publico: [], valorMensal: 0, observacoes: "" });
+  const abrirNovoCliente = () => setEditandoContato({ novo: true, nome: "", telefone: "", email: "", instagram: "", linkDrive: "", segmentos: [], publico: [], valorMensal: 0, apenasMensal: false, statusRecorrente: "Em aberto", observacoes: "" });
   const abrirEditarContato = (c) =>
-    setEditandoContato({ novo: false, nome: c.nome, telefone: c.telefone, email: c.email, instagram: c.instagram, linkDrive: c.linkDrive, segmentos: c.segmentos || [], publico: c.publico || [], valorMensal: c.valorMensal || 0, observacoes: c.observacoes });
+    setEditandoContato({ novo: false, nome: c.nome, telefone: c.telefone, email: c.email, instagram: c.instagram, linkDrive: c.linkDrive, segmentos: c.segmentos || [], publico: c.publico || [], valorMensal: c.valorMensal || 0, apenasMensal: c.apenasMensal || false, statusRecorrente: c.statusRecorrente || "Em aberto", observacoes: c.observacoes });
 
   const alternarSegmento = (seg) => {
     setEditandoContato((atual) => {
@@ -2411,6 +2814,28 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
                   Deixe 0 se a marca só paga por produção avulsa, sem mensalidade.
                 </p>
               </Field>
+              {editandoContato.valorMensal > 0 && (
+                <>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={editandoContato.apenasMensal}
+                      onChange={(e) => setEditandoContato({ ...editandoContato, apenasMensal: e.target.checked })}
+                    />
+                    Cliente mensal fixo — cobrar só o valor mensal, ignorar quantidade de looks/vídeos nas produções dele
+                  </label>
+                  <Field label="Status do pagamento deste mês">
+                    <select
+                      style={inputStyle}
+                      value={editandoContato.statusRecorrente}
+                      onChange={(e) => setEditandoContato({ ...editandoContato, statusRecorrente: e.target.value })}
+                    >
+                      <option value="Em aberto">Em aberto</option>
+                      <option value="Pago">Pago</option>
+                    </select>
+                  </Field>
+                </>
+              )}
               <Field label="Observações (preferências, particularidades)">
                 <textarea rows={3} style={{ ...inputStyle, resize: "vertical" }} value={editandoContato.observacoes} onChange={(e) => setEditandoContato({ ...editandoContato, observacoes: e.target.value })} />
               </Field>
@@ -2434,6 +2859,8 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
   const [novoPapel, setNovoPapel] = useState("equipe");
   const [novoPin, setNovoPin] = useState("");
   const [novoFoto, setNovoFoto] = useState("");
+  const [novasCapacidades, setNovasCapacidades] = useState([]);
+  const [editandoCapacidadesId, setEditandoCapacidadesId] = useState(null);
   const [carregandoFotoPerfil, setCarregandoFotoPerfil] = useState(null);
   const [novoSegmento, setNovoSegmento] = useState("");
   const [removendoPerfil, setRemovendoPerfil] = useState(null);
@@ -2698,11 +3125,12 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
 
   const adicionarPerfil = () => {
     if (!novoNome.trim()) return;
-    salvarPerfis([...perfis, { id: uid(), nome: novoNome.trim(), papel: novoPapel, pin: novoPin || "", foto: novoFoto || "", status: "aprovado" }]);
+    salvarPerfis([...perfis, { id: uid(), nome: novoNome.trim(), papel: novoPapel, pin: novoPin || "", foto: novoFoto || "", status: "aprovado", papeis: novasCapacidades }]);
     setNovoNome("");
     setNovoPin("");
     setNovoPapel("equipe");
     setNovoFoto("");
+    setNovasCapacidades([]);
   };
 
   const atualizarFotoPerfil = async (id, arquivo) => {
@@ -2796,33 +3224,82 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
 
         <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
           {aprovados.map((p) => (
-            <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "#F8F3E8", borderRadius: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <label style={{ cursor: "pointer", position: "relative" }} title="Trocar foto">
-                  {p.foto ? (
-                    <img src={p.foto} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
-                  ) : (
-                    <span style={{ width: 32, height: 32, borderRadius: "50%", background: "#F2E7DA", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#B0A388" }}>
-                      👤
+            <div key={p.id} style={{ padding: "8px 12px", background: "#F8F3E8", borderRadius: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <label style={{ cursor: "pointer", position: "relative" }} title="Trocar foto">
+                    {p.foto ? (
+                      <img src={p.foto} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
+                    ) : (
+                      <span style={{ width: 32, height: 32, borderRadius: "50%", background: "#F2E7DA", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#B0A388" }}>
+                        👤
+                      </span>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => atualizarFotoPerfil(p.id, e.target.files[0])}
+                      style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+                    />
+                  </label>
+                  <div style={{ fontSize: 13.5 }}>
+                    <b>{p.nome}</b>{" "}
+                    <span className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>
+                      {p.papel === "admin" ? "administração" : "equipe"}{p.pin ? " · com PIN" : ""}
                     </span>
+                    {carregandoFotoPerfil === p.id && <div style={{ fontSize: 10.5, color: "#8A7F6E" }}>processando foto…</div>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => setEditandoCapacidadesId(editandoCapacidadesId === p.id ? null : p.id)}
+                    style={{ ...btnGhost, padding: "4px 10px", fontSize: 12 }}
+                  >
+                    Funções
+                  </button>
+                  {p.id !== usuario.id && (
+                    <button onClick={() => setRemovendoPerfil(p)} style={{ ...btnGhost, color: "#A83B2E", padding: "4px 10px", fontSize: 12 }}>Remover</button>
                   )}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => atualizarFotoPerfil(p.id, e.target.files[0])}
-                    style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
-                  />
-                </label>
-                <div style={{ fontSize: 13.5 }}>
-                  <b>{p.nome}</b>{" "}
-                  <span className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>
-                    {p.papel === "admin" ? "administração" : "equipe"}{p.pin ? " · com PIN" : ""}
-                  </span>
-                  {carregandoFotoPerfil === p.id && <div style={{ fontSize: 10.5, color: "#8A7F6E" }}>processando foto…</div>}
                 </div>
               </div>
-              {p.id !== usuario.id && (
-                <button onClick={() => setRemovendoPerfil(p)} style={{ ...btnGhost, color: "#A83B2E", padding: "4px 10px", fontSize: 12 }}>Remover</button>
+
+              {(p.papeis || []).length > 0 && editandoCapacidadesId !== p.id && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, paddingLeft: 42 }}>
+                  {p.papeis.map((cap) => (
+                    <span key={cap} className="font-mono" style={{ fontSize: 9.5, color: "#7A2E22", background: "#F2E7DA", padding: "1px 7px", borderRadius: 999, fontWeight: 700 }}>
+                      {cap}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {editandoCapacidadesId === p.id && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10, paddingLeft: 42 }}>
+                  {CAPACIDADES.map((cap) => {
+                    const ativo = (p.papeis || []).includes(cap);
+                    return (
+                      <button
+                        key={cap}
+                        onClick={() => {
+                          const papeis = ativo ? p.papeis.filter((c) => c !== cap) : [...(p.papeis || []), cap];
+                          salvarPerfis(perfis.map((pp) => (pp.id === p.id ? { ...pp, papeis } : pp)));
+                        }}
+                        style={{
+                          padding: "4px 10px",
+                          borderRadius: 999,
+                          border: "1px solid " + (ativo ? "#7A2E22" : "#DCCFB2"),
+                          background: ativo ? "#7A2E22" : "transparent",
+                          color: ativo ? "#FBF4E9" : "#6B6153",
+                          fontSize: 11.5,
+                          fontWeight: ativo ? 700 : 500,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {cap}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
           ))}
@@ -2864,6 +3341,32 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
                 onChange={(e) => setNovoPin(e.target.value.replace(/\D/g, ""))} />
             </Field>
           </div>
+          <Field label="Funções que essa pessoa pode exercer nas produções">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {CAPACIDADES.map((cap) => {
+                const ativo = novasCapacidades.includes(cap);
+                return (
+                  <button
+                    key={cap}
+                    type="button"
+                    onClick={() => setNovasCapacidades(ativo ? novasCapacidades.filter((c) => c !== cap) : [...novasCapacidades, cap])}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: 999,
+                      border: "1px solid " + (ativo ? "#7A2E22" : "#DCCFB2"),
+                      background: ativo ? "#7A2E22" : "transparent",
+                      color: ativo ? "#FBF4E9" : "#6B6153",
+                      fontSize: 12.5,
+                      fontWeight: ativo ? 700 : 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {cap}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
           <button onClick={adicionarPerfil} style={{ ...btnPrimario, justifySelf: "start" }}>+ Adicionar pessoa</button>
         </div>
       </Card>
@@ -3056,6 +3559,8 @@ const btnPrimario = {
   cursor: "pointer",
   marginTop: 6,
 };
+
+const CAPACIDADES = ["Fotógrafo", "Filmmaker", "Editor de foto", "Editor de vídeo", "Storymaker"];
 
 // ---------- Login ----------
 const PAPEIS = [
@@ -3303,7 +3808,28 @@ function Login({ perfis, onEntrar, onCriarPerfis }) {
 }
 
 // ---------- Modelos ----------
+function BotaoCopiar({ texto }) {
+  const [copiado, setCopiado] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard?.writeText(texto).then(() => {
+          setCopiado(true);
+          setTimeout(() => setCopiado(false), 1200);
+        });
+      }}
+      title="Copiar"
+      style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: copiado ? "#566B4F" : "#8A7F6E", padding: "0 4px" }}
+    >
+      {copiado ? "✓ copiado" : "📋"}
+    </button>
+  );
+}
+
 function CartaoModelo({ modelo, onEditar, onExcluir }) {
+  const whatsappLink = modelo.whatsapp ? `https://wa.me/55${modelo.whatsapp.replace(/\D/g, "")}` : null;
   return (
     <Card style={{ padding: 14, display: "flex", gap: 12 }}>
       <div style={{ flexShrink: 0 }}>
@@ -3311,7 +3837,7 @@ function CartaoModelo({ modelo, onEditar, onExcluir }) {
           <img
             src={modelo.foto}
             alt={modelo.nome}
-            style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", border: "1px solid #E4D9C4" }}
+            style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover", objectPosition: `center ${modelo.fotoPosicaoY ?? 50}%`, border: "1px solid #E4D9C4" }}
           />
         ) : (
           <div
@@ -3340,6 +3866,11 @@ function CartaoModelo({ modelo, onEditar, onExcluir }) {
             </span>
           )}
         </div>
+        {modelo.categoria === "Kids" && modelo.responsavelNome && (
+          <div style={{ fontSize: 12, color: "#6B6153", marginTop: 2 }}>
+            Responsável: <b>{modelo.responsavelNome}</b>{modelo.responsavelParentesco ? ` (${modelo.responsavelParentesco})` : ""}
+          </div>
+        )}
         <div className="font-mono" style={{ fontSize: 11.5, color: "#8A7F6E", marginTop: 4, display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
           {modelo.altura && <span>altura: {modelo.altura}</span>}
           {modelo.tamanho && <span>tamanho: {modelo.tamanho}</span>}
@@ -3347,6 +3878,42 @@ function CartaoModelo({ modelo, onEditar, onExcluir }) {
           {modelo.sapato && <span>sapato: {modelo.sapato}</span>}
         </div>
         <div style={{ fontSize: 13, marginTop: 4, color: "#7A2E22", fontWeight: 600 }}>{fmtBRL(modelo.valorPorLook)} / look</div>
+
+        {(modelo.whatsapp || modelo.instagram || modelo.linkDrive) && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", marginTop: 6, fontSize: 12 }}>
+            {modelo.whatsapp && (
+              <span style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                <a href={whatsappLink} target="_blank" rel="noreferrer" style={{ color: "#566B4F", textDecoration: "none" }} onClick={(e) => e.stopPropagation()}>
+                  📞 WhatsApp
+                </a>
+                <BotaoCopiar texto={modelo.whatsapp} />
+              </span>
+            )}
+            {modelo.instagram && (
+              <span style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                <a
+                  href={`https://instagram.com/${modelo.instagram.replace("@", "")}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#7A2E22", textDecoration: "none" }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  📷 Instagram
+                </a>
+                <BotaoCopiar texto={modelo.instagram} />
+              </span>
+            )}
+            {modelo.linkDrive && (
+              <span style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                <a href={modelo.linkDrive} target="_blank" rel="noreferrer" style={{ color: "#3E6B8A", textDecoration: "none" }} onClick={(e) => e.stopPropagation()}>
+                  📁 Drive
+                </a>
+                <BotaoCopiar texto={modelo.linkDrive} />
+              </span>
+            )}
+          </div>
+        )}
+
         {modelo.infoEspecial && (
           <div style={{ fontSize: 12, color: "#6B6153", marginTop: 6, background: "#F8F3E8", padding: "6px 10px", borderRadius: 8 }}>
             {modelo.infoEspecial}
@@ -3363,26 +3930,38 @@ function CartaoModelo({ modelo, onEditar, onExcluir }) {
 
 function Modelos({ modelos, onNovo, onEditar, onExcluir }) {
   const [excluindo, setExcluindo] = useState(null);
+  const [abertos, setAbertos] = useState({});
   return (
     <div>
       {PUBLICO_OPCOES.map((categoria) => {
-        const doGrupo = modelos.filter((m) => m.categoria === categoria);
+        const doGrupo = modelos.filter((m) => m.categoria === categoria).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+        const aberto = !!abertos[categoria];
         return (
-          <div key={categoria} style={{ marginBottom: 28 }}>
-            <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
-              <SectionTitle title={`${categoria} (${doGrupo.length})`} />
+          <div key={categoria} style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: aberto ? 10 : 0 }}>
+              <button
+                onClick={() => setAbertos({ ...abertos, [categoria]: !aberto })}
+                style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", padding: "6px 0" }}
+              >
+                <h2 className="font-display" style={{ fontSize: 17, fontWeight: 600, color: "#2B2420", margin: 0 }}>
+                  {categoria} ({doGrupo.length})
+                </h2>
+                <span style={{ color: "#B0A388", fontSize: 12, transform: aberto ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▾</span>
+              </button>
               <button onClick={() => onNovo(categoria)} style={{ ...btnPrimario, marginLeft: "auto", marginTop: 0 }}>+ Adicionar</button>
             </div>
-            <div style={{ display: "grid", gap: 10 }}>
-              {doGrupo.map((m) => (
-                <CartaoModelo key={m.id} modelo={m} onEditar={onEditar} onExcluir={setExcluindo} />
-              ))}
-              {doGrupo.length === 0 && (
-                <Card style={{ padding: 20, textAlign: "center", color: "#8A7F6E", fontSize: 13 }}>
-                  Nenhum modelo {categoria.toLowerCase()} cadastrado ainda.
-                </Card>
-              )}
-            </div>
+            {aberto && (
+              <div style={{ display: "grid", gap: 10 }}>
+                {doGrupo.map((m) => (
+                  <CartaoModelo key={m.id} modelo={m} onEditar={onEditar} onExcluir={setExcluindo} />
+                ))}
+                {doGrupo.length === 0 && (
+                  <Card style={{ padding: 20, textAlign: "center", color: "#8A7F6E", fontSize: 13 }}>
+                    Nenhum modelo {categoria.toLowerCase()} cadastrado ainda.
+                  </Card>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
@@ -3412,7 +3991,7 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
     setCarregandoFoto(true);
     try {
       const dataUrl = await redimensionarFoto(arquivo);
-      setModelo({ ...m, foto: dataUrl });
+      setModelo({ ...m, foto: dataUrl, fotoPosicaoY: 50 });
     } catch (e) {}
     setCarregandoFoto(false);
   };
@@ -3430,9 +4009,9 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
           {m.id ? "Editar modelo" : "Novo modelo"}
         </h3>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 10 }}>
           {m.foto ? (
-            <img src={m.foto} alt={m.nome} style={{ width: 60, height: 60, borderRadius: "50%", objectFit: "cover", border: "1px solid #E4D9C4" }} />
+            <img src={m.foto} alt={m.nome} style={{ width: 60, height: 60, borderRadius: "50%", objectFit: "cover", objectPosition: `center ${m.fotoPosicaoY ?? 50}%`, border: "1px solid #E4D9C4" }} />
           ) : (
             <div style={{ width: 60, height: 60, borderRadius: "50%", background: "#F2E7DA", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, color: "#B0A388" }}>
               👤
@@ -3443,6 +4022,20 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
             {carregandoFoto && <p style={{ fontSize: 11.5, color: "#8A7F6E", margin: "4px 0 0" }}>Processando foto…</p>}
           </div>
         </div>
+
+        {m.foto && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, color: "#6B6153" }}>Enquadramento do rosto (ajuste se a foto cortar a cabeça)</label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={m.fotoPosicaoY ?? 50}
+              onChange={(e) => setModelo({ ...m, fotoPosicaoY: Number(e.target.value) })}
+              style={{ width: "100%" }}
+            />
+          </div>
+        )}
 
         <div style={{ display: "grid", gap: 12 }}>
           <Field label="Nome"><input style={inputStyle} value={m.nome} onChange={set("nome")} /></Field>
@@ -3460,6 +4053,22 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
             </label>
           )}
 
+          {m.categoria === "Kids" && (
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+              <Field label="Nome do responsável">
+                <input style={inputStyle} value={m.responsavelNome || ""} onChange={set("responsavelNome")} />
+              </Field>
+              <Field label="Parentesco">
+                <select style={inputStyle} value={m.responsavelParentesco || ""} onChange={set("responsavelParentesco")}>
+                  <option value="">—</option>
+                  <option value="Pai">Pai</option>
+                  <option value="Mãe">Mãe</option>
+                  <option value="Outro">Outro</option>
+                </select>
+              </Field>
+            </div>
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Altura"><input style={inputStyle} placeholder="1,75m" value={m.altura} onChange={set("altura")} /></Field>
             <Field label="Tamanho"><input style={inputStyle} placeholder="P / M / G" value={m.tamanho} onChange={set("tamanho")} /></Field>
@@ -3469,6 +4078,16 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
 
           <Field label="Valor por look (R$)">
             <input type="number" style={inputStyle} value={m.valorPorLook} onChange={(e) => setModelo({ ...m, valorPorLook: Number(e.target.value) })} />
+          </Field>
+
+          <Field label="WhatsApp do modelo (ou do responsável, se Kids)">
+            <input style={inputStyle} placeholder="81999999999" value={m.whatsapp || ""} onChange={set("whatsapp")} />
+          </Field>
+          <Field label="Instagram">
+            <input style={inputStyle} placeholder="@usuario" value={m.instagram || ""} onChange={set("instagram")} />
+          </Field>
+          <Field label="Link da pasta no Drive">
+            <input style={inputStyle} placeholder="https://drive.google.com/…" value={m.linkDrive || ""} onChange={set("linkDrive")} />
           </Field>
 
           <Field label="Informações especiais">
@@ -3486,11 +4105,68 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
 }
 
 // ---------- Modal de produção ----------
-function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos }) {
+function CampoResponsavel({ capacidade, valor, onChange, perfis }) {
+  const compativeis = perfis.filter((p) => (p.papeis || []).includes(capacidade)).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const ehListado = compativeis.some((p) => p.nome === valor);
+  const [avulso, setAvulso] = useState(!ehListado && !!valor);
+
+  if (avulso) {
+    return (
+      <div>
+        <input style={inputStyle} value={valor} onChange={(e) => onChange(e.target.value)} placeholder="nome (avulso)" />
+        {compativeis.length > 0 && (
+          <button type="button" onClick={() => setAvulso(false)} style={{ background: "none", border: "none", color: "#7A2E22", fontSize: 11, cursor: "pointer", padding: "4px 0 0", textDecoration: "underline" }}>
+            escolher da equipe
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <select
+      style={inputStyle}
+      value={valor || ""}
+      onChange={(e) => {
+        if (e.target.value === "__avulso__") { setAvulso(true); onChange(""); }
+        else onChange(e.target.value);
+      }}
+    >
+      <option value="">— nenhum —</option>
+      {compativeis.map((p) => <option key={p.id} value={p.nome}>{p.nome}</option>)}
+      <option value="__avulso__">+ outro (digitar nome)</option>
+    </select>
+  );
+}
+
+function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, segmentosDisponiveis, perfis }) {
   const p = producao;
   const set = (campo) => (e) => setProducao({ ...p, [campo]: e.target.value });
   const setNum = (campo) => (e) => setProducao({ ...p, [campo]: e.target.value === "" ? "" : Number(e.target.value) });
-  const modeloVinculado = modelos.find((m) => m.id === p.modeloId);
+
+  const slots = p.modelosSlots && p.modelosSlots.length ? p.modelosSlots : [{ modeloId: p.modeloId || "", modelo: p.modelo || "" }];
+
+  const atualizarSlots = (novosSlots) => {
+    const nomes = novosSlots.map((s) => s.modelo).filter(Boolean);
+    setProducao({ ...p, modelosSlots: novosSlots, modeloId: novosSlots[0]?.modeloId || "", modelo: nomes.join(", ") });
+  };
+  const mudarSlotId = (i, valor) => {
+    const novos = [...slots];
+    if (valor === "__avulso__") {
+      novos[i] = { modeloId: "", modelo: "" };
+    } else {
+      const m = modelos.find((mm) => mm.id === valor);
+      novos[i] = { modeloId: valor, modelo: m ? m.nome : "" };
+    }
+    atualizarSlots(novos);
+  };
+  const mudarSlotNome = (i, valor) => {
+    const novos = [...slots];
+    novos[i] = { ...novos[i], modelo: valor };
+    atualizarSlots(novos);
+  };
+  const adicionarSlot = () => { if (slots.length < 5) atualizarSlots([...slots, { modeloId: "", modelo: "" }]); };
+  const removerSlot = (i) => atualizarSlots(slots.filter((_, idx) => idx !== i));
 
   return (
     <div
@@ -3524,42 +4200,62 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos }) {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <Field label="Cliente"><input style={inputStyle} value={p.cliente} onChange={set("cliente")} /></Field>
-          <Field label="Modelo cadastrado">
-            <select
-              style={inputStyle}
-              value={p.modeloId || ""}
-              onChange={(e) => {
-                const m = modelos.find((mm) => mm.id === e.target.value);
-                setProducao({ ...p, modeloId: e.target.value, modelo: m ? m.nome : p.modelo });
-              }}
-            >
-              <option value="">— avulso / digitar nome —</option>
-              {PUBLICO_OPCOES.map((cat) => {
-                const doGrupo = modelos.filter((m) => m.categoria === cat);
-                if (doGrupo.length === 0) return null;
-                return (
-                  <optgroup key={cat} label={cat}>
-                    {doGrupo.map((m) => <option key={m.id} value={m.id}>{m.nome}{m.plusSize ? " (Plus Size)" : ""}</option>)}
-                  </optgroup>
-                );
-              })}
-            </select>
-          </Field>
-          {!p.modeloId && (
-            <Field label="Nome do modelo (avulso)">
-              <input style={inputStyle} value={p.modelo} onChange={set("modelo")} />
-            </Field>
-          )}
-          {modeloVinculado && (
-            <div style={{ gridColumn: "1 / -1", fontSize: 12.5, color: "#6B6153", background: "#F8F3E8", borderRadius: 8, padding: "8px 12px", display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
-              {modeloVinculado.altura && <span>altura: <b>{modeloVinculado.altura}</b></span>}
-              {modeloVinculado.tamanho && <span>tamanho: <b>{modeloVinculado.tamanho}</b></span>}
-              {modeloVinculado.numeracao && <span>numeração: <b>{modeloVinculado.numeracao}</b></span>}
-              {modeloVinculado.sapato && <span>sapato: <b>{modeloVinculado.sapato}</b></span>}
-              <span>valor/look: <b>{fmtBRL(modeloVinculado.valorPorLook)}</b></span>
-              {modeloVinculado.infoEspecial && <span style={{ width: "100%" }}>⚠ {modeloVinculado.infoEspecial}</span>}
+          <div />
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 6 }}>
+              Modelo(s) — até 5
             </div>
-          )}
+            <div style={{ display: "grid", gap: 8 }}>
+              {slots.map((slot, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                  <div style={{ flex: 1, display: "grid", gridTemplateColumns: slot.modeloId ? "1fr" : "1fr 1fr", gap: 8 }}>
+                    <select
+                      style={inputStyle}
+                      value={slot.modeloId || ""}
+                      onChange={(e) => mudarSlotId(i, e.target.value)}
+                    >
+                      <option value="__avulso__">— avulso / digitar nome —</option>
+                      {PUBLICO_OPCOES.map((cat) => {
+                        const doGrupo = modelos.filter((m) => m.categoria === cat);
+                        if (doGrupo.length === 0) return null;
+                        return (
+                          <optgroup key={cat} label={cat}>
+                            {doGrupo.map((m) => <option key={m.id} value={m.id}>{m.nome}{m.plusSize ? " (Plus Size)" : ""}</option>)}
+                          </optgroup>
+                        );
+                      })}
+                    </select>
+                    {!slot.modeloId && (
+                      <input style={inputStyle} value={slot.modelo} onChange={(e) => mudarSlotNome(i, e.target.value)} placeholder="nome do modelo avulso" />
+                    )}
+                  </div>
+                  {slots.length > 1 && (
+                    <button type="button" onClick={() => removerSlot(i)} style={{ ...btnGhost, color: "#A83B2E", padding: "8px 10px" }}>×</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {slots.length < 5 && (
+              <button type="button" onClick={adicionarSlot} style={{ ...btnGhost, marginTop: 8, fontSize: 12.5 }}>
+                + Adicionar outro modelo
+              </button>
+            )}
+          </div>
+          {slots.filter((s) => s.modeloId).map((slot) => {
+            const modeloVinculado = modelos.find((m) => m.id === slot.modeloId);
+            if (!modeloVinculado) return null;
+            return (
+              <div key={slot.modeloId} style={{ gridColumn: "1 / -1", fontSize: 12.5, color: "#6B6153", background: "#F8F3E8", borderRadius: 8, padding: "8px 12px", display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
+                <b style={{ width: "100%" }}>{modeloVinculado.nome}</b>
+                {modeloVinculado.altura && <span>altura: <b>{modeloVinculado.altura}</b></span>}
+                {modeloVinculado.tamanho && <span>tamanho: <b>{modeloVinculado.tamanho}</b></span>}
+                {modeloVinculado.numeracao && <span>numeração: <b>{modeloVinculado.numeracao}</b></span>}
+                {modeloVinculado.sapato && <span>sapato: <b>{modeloVinculado.sapato}</b></span>}
+                <span>valor/look: <b>{fmtBRL(modeloVinculado.valorPorLook)}</b></span>
+                {modeloVinculado.infoEspecial && <span style={{ width: "100%" }}>⚠ {modeloVinculado.infoEspecial}</span>}
+              </div>
+            );
+          })}
           <Field label="Data"><input type="date" style={inputStyle} value={p.data} onChange={set("data")} /></Field>
           <Field label="Horário"><input type="time" style={inputStyle} value={p.horario} onChange={set("horario")} /></Field>
           {!p.id && (
@@ -3580,7 +4276,19 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos }) {
               )}
             </div>
           )}
-          <Field label="Tipo de produção"><input style={inputStyle} value={p.tipo} onChange={set("tipo")} placeholder="moda, campanha, evento…" /></Field>
+          <Field label="Tipo de produção">
+            <select style={inputStyle} value={p.tipo} onChange={(e) => setProducao({ ...p, tipo: e.target.value, temVideo: e.target.value === "Foto e vídeo" })}>
+              <option value="">— selecione —</option>
+              <option value="Foto">Foto</option>
+              <option value="Foto e vídeo">Foto e vídeo</option>
+            </select>
+          </Field>
+          <Field label="Segmento">
+            <select style={inputStyle} value={p.segmento || ""} onChange={set("segmento")}>
+              <option value="">— nenhum —</option>
+              {segmentosDisponiveis.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
           <Field label="Cenário"><input style={inputStyle} value={p.cenario} onChange={set("cenario")} /></Field>
           <Field label="Localização do ensaio (endereço)"><input style={inputStyle} value={p.localizacao} onChange={set("localizacao")} placeholder="endereço ou nome do local" /></Field>
           <Field label="Link da pasta no Drive"><input style={inputStyle} value={p.linkDrive} onChange={set("linkDrive")} placeholder="https://drive.google.com/…" /></Field>
@@ -3635,10 +4343,33 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos }) {
           <Field label="Qtd. prato (gastronomia)"><input type="number" style={inputStyle} value={p.qtdPrato} onChange={setNum("qtdPrato")} /></Field>
           <Field label="Qtd. foto corporativa"><input type="number" style={inputStyle} value={p.qtdFotoCorporativa} onChange={setNum("qtdFotoCorporativa")} /></Field>
           <Field label="Prazo de entrega"><input type="date" style={inputStyle} value={p.prazo} onChange={set("prazo")} /></Field>
-          <Field label="Fotógrafo"><input style={inputStyle} value={p.fotografo} onChange={set("fotografo")} /></Field>
-          <Field label="Filmmaker"><input style={inputStyle} value={p.filmmaker} onChange={set("filmmaker")} /></Field>
-          <Field label="Editor"><input style={inputStyle} value={p.editor} onChange={set("editor")} /></Field>
-          <Field label="Storymaker"><input style={inputStyle} value={p.storymaker} onChange={set("storymaker")} /></Field>
+          <Field label="Fotógrafo">
+            <CampoResponsavel capacidade="Fotógrafo" valor={p.fotografo} onChange={(v) => setProducao({ ...p, fotografo: v })} perfis={perfis} />
+          </Field>
+          <Field label="Editor de foto">
+            <CampoResponsavel capacidade="Editor de foto" valor={p.editor} onChange={(v) => setProducao({ ...p, editor: v })} perfis={perfis} />
+          </Field>
+          <label style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={!!p.temVideo}
+              onChange={(e) => setProducao({ ...p, temVideo: e.target.checked, tipo: e.target.checked ? "Foto e vídeo" : "Foto" })}
+            />
+            Esta produção tem vídeo?
+          </label>
+          {p.temVideo && (
+            <>
+              <Field label="Filmmaker">
+                <CampoResponsavel capacidade="Filmmaker" valor={p.filmmaker} onChange={(v) => setProducao({ ...p, filmmaker: v })} perfis={perfis} />
+              </Field>
+              <Field label="Editor de vídeo">
+                <CampoResponsavel capacidade="Editor de vídeo" valor={p.editorVideo} onChange={(v) => setProducao({ ...p, editorVideo: v })} perfis={perfis} />
+              </Field>
+            </>
+          )}
+          <Field label="Storymaker">
+            <CampoResponsavel capacidade="Storymaker" valor={p.storymaker} onChange={(v) => setProducao({ ...p, storymaker: v })} perfis={perfis} />
+          </Field>
           <Field label="Status">
             <select style={inputStyle} value={p.status} onChange={set("status")}>
               {STATUS_PRODUCAO.map((s) => <option key={s}>{s}</option>)}
