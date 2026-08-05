@@ -39,7 +39,7 @@ const TAREFAS_PADRAO = [
   "Confirmar entrega",
 ];
 
-const PRECOS_PADRAO = { look: 40, lookbook: 150, video: 50 };
+const PRECOS_PADRAO = { look: 40, lookbook: 150, video: 50, prato: 50, fotoCorporativa: 50 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const hoje = () => new Date().toISOString().slice(0, 10);
@@ -70,7 +70,9 @@ function totalProducao(p, precos) {
   return (
     (Number(p.looks) || 0) * precos.look +
     (Number(p.lookbooks) || 0) * precos.lookbook +
-    (Number(p.videos) || 0) * precos.video
+    (Number(p.videos) || 0) * precos.video +
+    (Number(p.qtdPrato) || 0) * (precos.prato || 0) +
+    (Number(p.qtdFotoCorporativa) || 0) * (precos.fotoCorporativa || 0)
   );
 }
 
@@ -231,6 +233,7 @@ export default function StudioAroeiraOS() {
     "Moda evangélica",
     "Beachwear",
     "Produtos",
+    "Gastronomia",
   ]);
   const [webhookSheets, setWebhookSheets] = useState("");
   const [statusSync, setStatusSync] = useState(null); // 'ok' | 'erro' | null
@@ -286,7 +289,7 @@ export default function StudioAroeiraOS() {
         const sg = await storage.get("segmentos-disponiveis", true);
         if (sg) {
           const salvos = JSON.parse(sg.value);
-          const novosPadroes = ["Moda social", "Moda evangélica", "Beachwear", "Produtos"];
+          const novosPadroes = ["Moda social", "Moda evangélica", "Beachwear", "Produtos", "Gastronomia"];
           const mesclado = Array.from(new Set([...salvos, ...novosPadroes.filter((n) => !salvos.includes(n))]));
           setSegmentosDisponiveis(mesclado);
           if (mesclado.length !== salvos.length) {
@@ -494,8 +497,13 @@ export default function StudioAroeiraOS() {
       horario: "09:00",
       tipo: "",
       looks: 0,
+      looksFeminino: 0,
+      looksMasculino: 0,
+      looksKids: 0,
       lookbooks: 0,
       videos: 0,
+      qtdPrato: 0,
+      qtdFotoCorporativa: 0,
       cenario: "",
       localizacao: "",
       linkDrive: "",
@@ -1555,7 +1563,19 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
               <span>🎬 filmmaker: <b>{p.filmmaker || "—"}</b></span>
               <span>🖥️ editor: <b>{p.editor || "—"}</b></span>
               <span>📝 storymaker: <b>{p.storymaker || "—"}</b></span>
-              <span className="font-mono">{p.looks || 0} lookbook · {p.lookbooks || 0} criativos de vídeo · {p.videos || 0} vídeos lookbook</span>
+              <span className="font-mono">
+                {p.looks || 0} lookbook
+                {(Number(p.looksFeminino) || Number(p.looksMasculino) || Number(p.looksKids)) > 0 && (
+                  <> ({[p.looksFeminino > 0 && `${p.looksFeminino} fem`, p.looksMasculino > 0 && `${p.looksMasculino} masc`, p.looksKids > 0 && `${p.looksKids} kids`].filter(Boolean).join(" · ")})</>
+                )}
+                {" · "}{p.lookbooks || 0} criativos de vídeo · {p.videos || 0} vídeos lookbook
+                {(Number(p.qtdPrato) > 0 || Number(p.qtdFotoCorporativa) > 0) && (
+                  <>
+                    {p.qtdPrato > 0 && <> · {p.qtdPrato} prato(s)</>}
+                    {p.qtdFotoCorporativa > 0 && <> · {p.qtdFotoCorporativa} foto(s) corporativa(s)</>}
+                  </>
+                )}
+              </span>
               {isAdmin && (
                 <span className="font-display" style={{ color: "#7A2E22", fontWeight: 600 }}>{fmtBRL(totalProducao(p, precos))}</span>
               )}
@@ -1694,9 +1714,16 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
   clientesCadastro.forEach((c) => (mapaPublico[c.nome] = c.publico || []));
   const contagemPublico = { Masculino: 0, Feminino: 0, Kids: 0, "Não informado": 0 };
   producoesReais.forEach((p) => {
-    const pub = mapaPublico[p.cliente] || [];
-    if (pub.length === 0) contagemPublico["Não informado"]++;
-    else pub.forEach((tag) => (contagemPublico[tag] = (contagemPublico[tag] || 0) + 1));
+    const temDetalhe = (Number(p.looksFeminino) || 0) + (Number(p.looksMasculino) || 0) + (Number(p.looksKids) || 0) > 0;
+    if (temDetalhe) {
+      if (p.looksFeminino > 0) contagemPublico.Feminino += Number(p.looksFeminino);
+      if (p.looksMasculino > 0) contagemPublico.Masculino += Number(p.looksMasculino);
+      if (p.looksKids > 0) contagemPublico.Kids += Number(p.looksKids);
+    } else {
+      const pub = mapaPublico[p.cliente] || [];
+      if (pub.length === 0) contagemPublico["Não informado"]++;
+      else pub.forEach((tag) => (contagemPublico[tag] = (contagemPublico[tag] || 0) + 1));
+    }
   });
   const dadosPublico = Object.entries(contagemPublico)
     .filter(([, v]) => v > 0)
@@ -1838,11 +1865,11 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         />
       )}
 
-      <SectionTitle title="Ensaios por público" />
+      <SectionTitle title="Looks por público" />
       <Card style={{ padding: 20, marginBottom: 26 }}>
         {dadosPublico.length === 0 ? (
           <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center", margin: 0 }}>
-            Sem dados suficientes ainda — cadastre o público (Masculino/Feminino/Kids) de cada cliente na aba Clientes.
+            Sem dados suficientes ainda — informe quantos looks foram femininos/masculinos/kids ao cadastrar a produção.
           </p>
         ) : (
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 24 }}>
@@ -1854,7 +1881,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
                       <Cell key={d.name} fill={CORES_PUBLICO[d.name] || "#8A7F6E"} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(v, n) => [`${v} ensaio(s)`, n]} />
+                  <Tooltip formatter={(v, n) => [`${v} look(s)`, n]} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -1868,6 +1895,11 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
                 </div>
               ))}
             </div>
+            {dadosPublico.some((d) => d.name === "Não informado") && (
+              <p style={{ width: "100%", fontSize: 11.5, color: "#B0A388", margin: 0 }}>
+                "Não informado" são produções antigas, cadastradas antes de existir esse detalhamento por look.
+              </p>
+            )}
           </div>
         )}
       </Card>
@@ -2850,6 +2882,14 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
             <input type="number" style={inputStyle} value={local.video}
               onChange={(e) => setLocal({ ...local, video: Number(e.target.value) })} />
           </Field>
+          <Field label="Prato (gastronomia) — valor por unidade (R$)">
+            <input type="number" style={inputStyle} value={local.prato || 0}
+              onChange={(e) => setLocal({ ...local, prato: Number(e.target.value) })} />
+          </Field>
+          <Field label="Foto corporativa — valor por unidade (R$)">
+            <input type="number" style={inputStyle} value={local.fotoCorporativa || 0}
+              onChange={(e) => setLocal({ ...local, fotoCorporativa: Number(e.target.value) })} />
+          </Field>
           <button onClick={() => salvarPrecos(local)} style={{ ...btnPrimario, justifySelf: "start" }}>
             Salvar preços
           </button>
@@ -3544,9 +3584,56 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos }) {
           <Field label="Cenário"><input style={inputStyle} value={p.cenario} onChange={set("cenario")} /></Field>
           <Field label="Localização do ensaio (endereço)"><input style={inputStyle} value={p.localizacao} onChange={set("localizacao")} placeholder="endereço ou nome do local" /></Field>
           <Field label="Link da pasta no Drive"><input style={inputStyle} value={p.linkDrive} onChange={set("linkDrive")} placeholder="https://drive.google.com/…" /></Field>
-          <Field label="Qtd. lookbook"><input type="number" style={inputStyle} value={p.looks} onChange={setNum("looks")} /></Field>
+          <div style={{ gridColumn: "1 / -1", background: "#F8F3E8", borderRadius: 8, padding: "10px 12px" }}>
+            <div className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+              Qtd. lookbook (looks) — por público
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              <Field label="Feminino">
+                <input
+                  type="number"
+                  style={inputStyle}
+                  value={p.looksFeminino}
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? 0 : Number(e.target.value);
+                    const looks = v + (Number(p.looksMasculino) || 0) + (Number(p.looksKids) || 0);
+                    setProducao({ ...p, looksFeminino: e.target.value === "" ? "" : v, looks });
+                  }}
+                />
+              </Field>
+              <Field label="Masculino">
+                <input
+                  type="number"
+                  style={inputStyle}
+                  value={p.looksMasculino}
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? 0 : Number(e.target.value);
+                    const looks = (Number(p.looksFeminino) || 0) + v + (Number(p.looksKids) || 0);
+                    setProducao({ ...p, looksMasculino: e.target.value === "" ? "" : v, looks });
+                  }}
+                />
+              </Field>
+              <Field label="Kids">
+                <input
+                  type="number"
+                  style={inputStyle}
+                  value={p.looksKids}
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? 0 : Number(e.target.value);
+                    const looks = (Number(p.looksFeminino) || 0) + (Number(p.looksMasculino) || 0) + v;
+                    setProducao({ ...p, looksKids: e.target.value === "" ? "" : v, looks });
+                  }}
+                />
+              </Field>
+            </div>
+            <p style={{ fontSize: 12, color: "#6B6153", margin: "8px 0 0" }}>
+              Total: <b>{p.looks || 0}</b> look(s) no lookbook
+            </p>
+          </div>
           <Field label="Qtd. criativos de vídeo"><input type="number" style={inputStyle} value={p.lookbooks} onChange={setNum("lookbooks")} /></Field>
           <Field label="Qtd. vídeos lookbook"><input type="number" style={inputStyle} value={p.videos} onChange={setNum("videos")} /></Field>
+          <Field label="Qtd. prato (gastronomia)"><input type="number" style={inputStyle} value={p.qtdPrato} onChange={setNum("qtdPrato")} /></Field>
+          <Field label="Qtd. foto corporativa"><input type="number" style={inputStyle} value={p.qtdFotoCorporativa} onChange={setNum("qtdFotoCorporativa")} /></Field>
           <Field label="Prazo de entrega"><input type="date" style={inputStyle} value={p.prazo} onChange={set("prazo")} /></Field>
           <Field label="Fotógrafo"><input style={inputStyle} value={p.fotografo} onChange={set("fotografo")} /></Field>
           <Field label="Filmmaker"><input style={inputStyle} value={p.filmmaker} onChange={set("filmmaker")} /></Field>
