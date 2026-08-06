@@ -2025,11 +2025,25 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
   });
   const dadosPorModelo = Object.values(mapaModelo).sort((a, b) => b.valorGerado - a.valorGerado);
 
-  const [editandoHistorico, setEditandoHistorico] = useState(null);
-  const [excluindoHistorico, setExcluindoHistorico] = useState(null);
   const [mostrarAberto, setMostrarAberto] = useState(false);
   const [mostrarRecorrente, setMostrarRecorrente] = useState(false);
-  const historicoOrdenado = [...historicoFinanceiro].sort((a, b) => (a.mes < b.mes ? 1 : -1));
+  const [anoFinanceiro, setAnoFinanceiro] = useState(hoje().slice(0, 4));
+
+  const anosDisponiveisFin = Array.from(new Set(producoes.map((p) => (p.data || "").slice(0, 4)).filter(Boolean))).sort().reverse();
+  if (!anosDisponiveisFin.includes(hoje().slice(0, 4))) anosDisponiveisFin.unshift(hoje().slice(0, 4));
+
+  const nomesMesLongo = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  const dadosMesFinanceiro = nomesMesLongo.map((nome, i) => {
+    const mesStr = `${anoFinanceiro}-${String(i + 1).padStart(2, "0")}`;
+    const doMes = producoesFaturaveis.filter((p) => (p.data || "").startsWith(mesStr));
+    const historicoMes = historicoFinanceiro.filter((h) => h.mes === mesStr).reduce((s, h) => s + (Number(h.valor) || 0), 0);
+    const faturado = doMes.reduce((s, p) => s + totalProducao(p, precos), 0) + historicoMes + receitaMensalRecorrente;
+    const recebido =
+      doMes.filter((p) => p.pagamentoStatus === "Pago").reduce((s, p) => s + totalProducao(p, precos), 0) +
+      historicoMes +
+      recebidoRecorrente;
+    return { mes: nome, faturado, recebido };
+  });
 
   return (
     <div>
@@ -2100,114 +2114,44 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
       )}
 
       <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
-        <SectionTitle title="Faturamento mensal (antes do controle por produção)" />
-        <button
-          onClick={() => setEditandoHistorico({ novo: true, mes: hoje().slice(0, 7), valor: 0, observacao: "" })}
-          style={{ ...btnPrimario, marginLeft: "auto", marginTop: 0 }}
+        <SectionTitle title="Faturamento por mês" />
+        <select
+          value={anoFinanceiro}
+          onChange={(e) => setAnoFinanceiro(e.target.value)}
+          style={{ ...inputStyle, maxWidth: 110, marginLeft: "auto" }}
         >
-          + Adicionar mês
-        </button>
+          {anosDisponiveisFin.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
       </div>
       <Card style={{ overflowX: "auto", marginBottom: 26 }}>
-        {historicoOrdenado.length === 0 ? (
-          <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center", padding: 20, margin: 0 }}>
-            Nenhum lançamento histórico ainda — use isso pra registrar faturamento de meses anteriores ao uso do app, sem precisar recriar produção por produção.
-          </p>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid #E4D9C4" }}>
-                {["Mês", "Valor", "Observação", ""].map((h) => (
-                  <th key={h} className="font-mono" style={{ padding: "10px 12px", color: "#8A7F6E", fontWeight: 500, fontSize: 11, textTransform: "uppercase" }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {historicoOrdenado.map((h) => (
-                <tr key={h.id} style={{ borderBottom: "1px solid #F0E8D6" }}>
-                  <td style={{ padding: "9px 12px" }}>{h.label || h.mes}</td>
-                  <td style={{ padding: "9px 12px", fontWeight: 600 }}>{fmtBRL(h.valor)}</td>
-                  <td style={{ padding: "9px 12px", color: "#8A7F6E", fontSize: 12.5 }}>{h.observacao}</td>
-                  <td style={{ padding: "9px 12px", whiteSpace: "nowrap" }}>
-                    <button onClick={() => setEditandoHistorico({ ...h, novo: false })} style={{ ...btnGhost, padding: "3px 9px", fontSize: 12, marginRight: 6 }}>Editar</button>
-                    <button onClick={() => setExcluindoHistorico(h)} style={{ ...btnGhost, color: "#A83B2E", padding: "3px 9px", fontSize: 12 }}>Excluir</button>
-                  </td>
-                </tr>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+          <thead>
+            <tr style={{ textAlign: "left", borderBottom: "1px solid #E4D9C4" }}>
+              {["Mês", "Faturado", "Recebido", "Em aberto"].map((h) => (
+                <th key={h} className="font-mono" style={{ padding: "10px 12px", color: "#8A7F6E", fontWeight: 500, fontSize: 11, textTransform: "uppercase" }}>
+                  {h}
+                </th>
               ))}
-            </tbody>
-          </table>
-        )}
+            </tr>
+          </thead>
+          <tbody>
+            {dadosMesFinanceiro.map((d) => (
+              <tr key={d.mes} style={{ borderBottom: "1px solid #F0E8D6", opacity: d.faturado === 0 ? 0.5 : 1 }}>
+                <td style={{ padding: "9px 12px" }}>{d.mes}</td>
+                <td style={{ padding: "9px 12px", fontWeight: 600 }}>{fmtBRL(d.faturado)}</td>
+                <td style={{ padding: "9px 12px", color: "#566B4F" }}>{fmtBRL(d.recebido)}</td>
+                <td style={{ padding: "9px 12px", color: "#B9862E" }}>{fmtBRL(d.faturado - d.recebido)}</td>
+              </tr>
+            ))}
+            <tr>
+              <td style={{ padding: "10px 12px", fontWeight: 700 }}>Total {anoFinanceiro}</td>
+              <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.faturado, 0))}</td>
+              <td style={{ padding: "10px 12px", fontWeight: 700, color: "#566B4F" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.recebido, 0))}</td>
+              <td style={{ padding: "10px 12px", fontWeight: 700, color: "#B9862E" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + (d.faturado - d.recebido), 0))}</td>
+            </tr>
+          </tbody>
+        </table>
       </Card>
-
-      {editandoHistorico && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setEditandoHistorico(null)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 380, width: "100%" }}>
-            <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0 }}>
-              {editandoHistorico.novo ? "Adicionar faturamento mensal" : "Editar lançamento"}
-            </h3>
-            <div style={{ display: "grid", gap: 10 }}>
-              <Field label="Mês">
-                <input
-                  type="month"
-                  style={inputStyle}
-                  value={editandoHistorico.mes}
-                  onChange={(e) => setEditandoHistorico({ ...editandoHistorico, mes: e.target.value })}
-                />
-              </Field>
-              <Field label="Valor recebido (R$)">
-                <input
-                  type="number"
-                  style={inputStyle}
-                  value={editandoHistorico.valor}
-                  onChange={(e) => setEditandoHistorico({ ...editandoHistorico, valor: Number(e.target.value) })}
-                />
-              </Field>
-              <Field label="Observação (opcional)">
-                <input
-                  style={inputStyle}
-                  value={editandoHistorico.observacao}
-                  onChange={(e) => setEditandoHistorico({ ...editandoHistorico, observacao: e.target.value })}
-                />
-              </Field>
-            </div>
-            <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "flex-end" }}>
-              <button onClick={() => setEditandoHistorico(null)} style={btnGhost}>Cancelar</button>
-              <button
-                onClick={() => {
-                  const [ano, mesNum] = editandoHistorico.mes.split("-");
-                  const nomesMesLongo = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-                  const label = `${nomesMesLongo[Number(mesNum) - 1]} ${ano}`;
-                  const { novo, ...dados } = editandoHistorico;
-                  const registro = { ...dados, label, id: dados.id || uid() };
-                  if (novo) {
-                    salvarHistoricoFinanceiro([...historicoFinanceiro, registro]);
-                  } else {
-                    salvarHistoricoFinanceiro(historicoFinanceiro.map((h) => (h.id === registro.id ? registro : h)));
-                  }
-                  setEditandoHistorico(null);
-                }}
-                style={btnPrimario}
-              >
-                Salvar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {excluindoHistorico && (
-        <ConfirmarExclusao
-          titulo="Excluir lançamento?"
-          mensagem={`Isso remove o faturamento mensal de "${excluindoHistorico.label || excluindoHistorico.mes}" (${fmtBRL(excluindoHistorico.valor)}).`}
-          onCancelar={() => setExcluindoHistorico(null)}
-          onConfirmar={() => {
-            salvarHistoricoFinanceiro(historicoFinanceiro.filter((h) => h.id !== excluindoHistorico.id));
-            setExcluindoHistorico(null);
-          }}
-        />
-      )}
 
       <SectionTitle title="Looks por público" />
       <Card style={{ padding: 20, marginBottom: 26 }}>
@@ -2412,19 +2356,32 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
             {producoes
               .slice()
               .sort((a, b) => (a.data < b.data ? 1 : -1))
-              .map((p) => (
-                <tr key={p.id} style={{ borderBottom: "1px solid #F0E8D6" }}>
-                  <td style={{ padding: "10px 12px" }}>{p.cliente}</td>
-                  <td style={{ padding: "10px 12px" }}>{fmtData(p.data)}</td>
-                  <td style={{ padding: "10px 12px" }}>{p.looks || 0}</td>
-                  <td style={{ padding: "10px 12px" }}>{p.lookbooks || 0}</td>
-                  <td style={{ padding: "10px 12px" }}>{p.videos || 0}</td>
-                  <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmtBRL(totalProducao(p, precos))}</td>
-                  <td style={{ padding: "10px 12px" }}>
-                    <Badge color={p.pagamentoStatus === "Pago" ? "#566B4F" : "#B9862E"}>{p.pagamentoStatus}</Badge>
-                  </td>
-                </tr>
-              ))}
+              .map((p) => {
+                const ehMensal = clientesApenasMensal.has(p.cliente);
+                return (
+                  <tr key={p.id} style={{ borderBottom: "1px solid #F0E8D6" }}>
+                    <td style={{ padding: "10px 12px" }}>{p.cliente}</td>
+                    <td style={{ padding: "10px 12px" }}>{fmtData(p.data)}</td>
+                    <td style={{ padding: "10px 12px" }}>{p.looks || 0}</td>
+                    <td style={{ padding: "10px 12px" }}>{p.lookbooks || 0}</td>
+                    <td style={{ padding: "10px 12px" }}>{p.videos || 0}</td>
+                    <td style={{ padding: "10px 12px", fontWeight: 600 }}>
+                      {ehMensal ? (
+                        <span className="font-mono" style={{ fontSize: 11.5, color: "#8A7F6E", fontWeight: 500 }}>Incluso no mensal</span>
+                      ) : (
+                        fmtBRL(totalProducao(p, precos))
+                      )}
+                    </td>
+                    <td style={{ padding: "10px 12px" }}>
+                      {ehMensal ? (
+                        <span className="font-mono" style={{ fontSize: 11, color: "#8A7F6E" }}>—</span>
+                      ) : (
+                        <Badge color={p.pagamentoStatus === "Pago" ? "#566B4F" : "#B9862E"}>{p.pagamentoStatus}</Badge>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             {producoes.length === 0 && (
               <tr>
                 <td colSpan={7} style={{ padding: 20, textAlign: "center", color: "#8A7F6E" }}>
