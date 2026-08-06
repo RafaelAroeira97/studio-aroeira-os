@@ -27,16 +27,6 @@ const STATUS_CONCLUIDO = "Aprovado"; // status que conta como "finalizado" em c�
 
 const STATUS_PAGAMENTO = ["Em aberto", "Pago", "Parcialmente pago", "Cancelado"];
 
-const TAREFAS_PADRAO = [
-  "Realizar ensaio",
-  "Fazer backup",
-  "Selecionar fotos",
-  "Editar fotos",
-  "Exportar material",
-  "Enviar para cliente",
-  "Confirmar entrega",
-];
-
 const PRECOS_PADRAO = { look: 40, lookbook: 150, video: 50, prato: 50, fotoCorporativa: 50 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -53,6 +43,12 @@ const fmtDataHora = (ts) => {
   const d = new Date(ts);
   const pad = (n) => String(n).padStart(2, "0");
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} às ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const fmtMesAno = (ts) => {
+  if (!ts) return null;
+  const d = new Date(ts);
+  return `${MESES_PT[d.getMonth()]}/${d.getFullYear()}`;
 };
 const diasEntre = (a, b) => Math.floor((new Date(b) - new Date(a)) / 86400000);
 
@@ -72,6 +68,15 @@ function totalProducao(p, precos) {
     (Number(p.qtdPrato) || 0) * (precos.prato || 0) +
     (Number(p.qtdFotoCorporativa) || 0) * (precos.fotoCorporativa || 0)
   );
+}
+
+// retorna a lista de mensalidades de um cliente, com fallback pro formato antigo (valorMensal único)
+function mensalidadesDoCliente(c) {
+  if (c.mensalidades && c.mensalidades.length) return c.mensalidades;
+  if (Number(c.valorMensal) > 0) {
+    return [{ mes: hoje().slice(0, 7), valor: c.valorMensal, pago: c.statusRecorrente === "Pago" }];
+  }
+  return [];
 }
 
 function redimensionarFoto(arquivo, tamanhoMax = 320, qualidade = 0.75) {
@@ -215,11 +220,102 @@ const inputStyle = {
 };
 
 // ---------- app ----------
+// ---------- Catálogo público de modelos (sem login — usado só na versão web publicada) ----------
+export function CatalogoModelos() {
+  const [modelos, setModelos] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const md = await storage.get("modelos", true);
+        if (md) setModelos(JSON.parse(md.value));
+      } catch (e) {}
+      setCarregando(false);
+    })();
+  }, []);
+
+  return (
+    <div className="font-body" style={{ minHeight: "100vh", background: "#F1ECE1", padding: "28px 16px 60px" }}>
+      <Fonts />
+      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 30 }}>
+          <img src={LOGO_AROEIRA} alt="Studio Aroeira" style={{ height: 34, width: "auto", margin: "0 auto" }} />
+          <p className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", letterSpacing: "0.06em", marginTop: 8 }}>
+            MODELOS DISPONÍVEIS
+          </p>
+        </div>
+
+        {carregando ? (
+          <p style={{ textAlign: "center", color: "#8A7F6E" }}>Carregando…</p>
+        ) : (
+          PUBLICO_OPCOES.map((categoria) => {
+            const doGrupo = modelos.filter((m) => m.categoria === categoria).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+            if (doGrupo.length === 0) return null;
+            return (
+              <div key={categoria} style={{ marginBottom: 32 }}>
+                <h2 className="font-display" style={{ fontSize: 19, fontWeight: 600, color: "#2B2420", marginBottom: 14 }}>
+                  {categoria}
+                </h2>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 16 }}>
+                  {doGrupo.map((m) => (
+                    <div key={m.id} style={{ background: "#FFFDF9", border: "1px solid #E4D9C4", borderRadius: 14, overflow: "hidden" }}>
+                      {m.foto ? (
+                        <img
+                          src={m.foto}
+                          alt={m.nome}
+                          style={{ width: "100%", height: 170, objectFit: "cover", objectPosition: `center ${m.fotoPosicaoY ?? 50}%`, display: "block" }}
+                        />
+                      ) : (
+                        <div style={{ width: "100%", height: 170, background: "#F2E7DA", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 38, color: "#B0A388" }}>
+                          👤
+                        </div>
+                      )}
+                      <div style={{ padding: "10px 12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span className="font-display" style={{ fontSize: 14.5, fontWeight: 600 }}>{m.nome}</span>
+                          {m.plusSize && (
+                            <span className="font-mono" style={{ fontSize: 9, color: "#99475A", background: "#F5E3E8", padding: "1px 6px", borderRadius: 999, fontWeight: 700 }}>
+                              PLUS SIZE
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", marginTop: 4 }}>
+                          {[m.altura, m.tamanho].filter(Boolean).join(" · ")}
+                        </div>
+                        <div style={{ fontSize: 13.5, color: "#7A2E22", fontWeight: 600, marginTop: 6 }}>
+                          {fmtBRL(m.valorPorLook)} <span style={{ fontWeight: 400, color: "#6B6153" }}>/ look</span>
+                        </div>
+                        {m.valorAtualizadoEm && (
+                          <div className="font-mono" style={{ fontSize: 9.5, color: "#B0A388", marginTop: 2 }}>
+                            preço atualizado em {fmtMesAno(m.valorAtualizadoEm)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })
+        )}
+
+        {!carregando && modelos.length === 0 && (
+          <p style={{ textAlign: "center", color: "#8A7F6E" }}>Nenhum modelo disponível no momento.</p>
+        )}
+
+        <p className="font-mono" style={{ textAlign: "center", fontSize: 10.5, color: "#B0A388", marginTop: 40 }}>
+          Studio Aroeira — catálogo de modelos
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function StudioAroeiraOS() {
   const [tab, setTab] = useState("dashboard");
   const [producoes, setProducoes] = useState([]);
   const [precos, setPrecos] = useState(PRECOS_PADRAO);
-  const [tarefasModelo, setTarefasModelo] = useState(TAREFAS_PADRAO);
   const [perfis, setPerfis] = useState([]);
   const [usuario, setUsuario] = useState(null);
   const [clientesCadastro, setClientesCadastro] = useState([]);
@@ -278,10 +374,6 @@ export default function StudioAroeiraOS() {
       try {
         const pr = await storage.get("precos", true);
         if (pr) setPrecos(JSON.parse(pr.value));
-      } catch (e) {}
-      try {
-        const t = await storage.get("tarefas-modelo", true);
-        if (t) setTarefasModelo(JSON.parse(t.value));
       } catch (e) {}
       try {
         const pf = await storage.get("perfis", true);
@@ -450,6 +542,7 @@ export default function StudioAroeiraOS() {
       numeracao: "",
       sapato: "",
       valorPorLook: 0,
+      valorAtualizadoEm: null,
       infoEspecial: "",
       foto: "",
       fotoPosicaoY: 50,
@@ -517,14 +610,6 @@ export default function StudioAroeiraOS() {
     } catch (e) {}
   }, []);
 
-  const salvarTarefasModelo = useCallback(async (novas) => {
-    setTarefasModelo(novas);
-    try {
-      await storage.set("tarefas-modelo", JSON.stringify(novas), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
-
   // ---- CRUD produções ----
   const novaProducao = () => {
     setEditando({
@@ -560,7 +645,6 @@ export default function StudioAroeiraOS() {
       status: "Agendado",
       pagamentoStatus: "Em aberto",
       valorPago: 0,
-      tasks: tarefasModelo.map((t) => ({ id: uid(), label: t, done: false })),
       repetir: false,
       repetirAte: "",
     });
@@ -577,7 +661,6 @@ export default function StudioAroeiraOS() {
       pagamentoStatus: "Em aberto",
       valorPago: 0,
       linkDrive: "",
-      tasks: (p.tasks || []).map((t) => ({ ...t, id: uid(), done: false })),
       repetir: false,
       repetirAte: "",
     });
@@ -614,7 +697,6 @@ export default function StudioAroeiraOS() {
             id: uid(),
             data: dataISO,
             prazo: dadosBase.prazo === editando.data ? dataISO : dadosBase.prazo,
-            tasks: dadosBase.tasks.map((t) => ({ ...t, id: uid(), done: false })),
             createdAt: Date.now(),
             historico: [registro],
           });
@@ -649,16 +731,6 @@ export default function StudioAroeiraOS() {
         const registro = { status: novoStatus, por: usuario?.nome || "desconhecido", em: Date.now() };
         return { ...p, status: novoStatus, historico: [...(p.historico || []), registro] };
       })
-    );
-  };
-
-  const toggleTask = (producaoId, taskId) => {
-    salvarProducoes(
-      producoes.map((p) =>
-        p.id === producaoId
-          ? { ...p, tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t)) }
-          : p
-      )
     );
   };
 
@@ -738,6 +810,8 @@ export default function StudioAroeiraOS() {
           valorMensal: cadastro.valorMensal || 0,
           apenasMensal: cadastro.apenasMensal || false,
           statusRecorrente: cadastro.statusRecorrente || "Em aberto",
+          clienteMensal: cadastro.clienteMensal || cadastro.apenasMensal || false,
+          mensalidades: cadastro.mensalidades || [],
           observacoes: cadastro.observacoes || "",
           alerta,
         };
@@ -957,7 +1031,6 @@ export default function StudioAroeiraOS() {
             onEditar={editarProducao}
             onExcluir={excluirProducao}
             onDuplicar={duplicarProducao}
-            onToggleTask={toggleTask}
             onStatusChange={mudarStatus}
             precos={precos}
             isAdmin={isAdmin}
@@ -998,8 +1071,6 @@ export default function StudioAroeiraOS() {
           <Config
             precos={precos}
             salvarPrecos={salvarPrecos}
-            tarefasModelo={tarefasModelo}
-            salvarTarefasModelo={salvarTarefasModelo}
             perfis={perfis}
             salvarPerfis={salvarPerfis}
             usuario={usuario}
@@ -1636,7 +1707,7 @@ function Quadro({ producoes, onStatusChange }) {
 }
 
 // ---------- Produções ----------
-function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, onDuplicar, onToggleTask, onStatusChange, precos, isAdmin, titulo }) {
+function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, onDuplicar, onStatusChange, precos, isAdmin, titulo }) {
   const [filtroStatus, setFiltroStatus] = useState("");
   const [filtroResponsavel, setFiltroResponsavel] = useState("");
   const [filtroPeriodo, setFiltroPeriodo] = useState("semana");
@@ -1843,31 +1914,6 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
                     )}
                   </div>
 
-                  {p.tasks && p.tasks.length > 0 && (
-                    <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {p.tasks.map((t) => (
-                        <label
-                          key={t.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                            fontSize: 12.5,
-                            padding: "4px 10px",
-                            borderRadius: 999,
-                            background: t.done ? "#E7EEE3" : "#F2ECDD",
-                            color: t.done ? "#3F4F3A" : "#6B6153",
-                            textDecoration: t.done ? "line-through" : "none",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <input type="checkbox" checked={t.done} onChange={() => onToggleTask(p.id, t.id)} />
-                          {t.label}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-
                   <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
                     <a
                       href={linkGoogleAgenda(p)}
@@ -1946,15 +1992,17 @@ const CORES_PUBLICO = {
 };
 
 function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, salvarHistoricoFinanceiro, despesasFixas, salvarDespesasFixas, modelos }) {
-  const clientesApenasMensal = new Set(clientesCadastro.filter((c) => c.apenasMensal).map((c) => c.nome));
+  const clientesApenasMensal = new Set(clientesCadastro.filter((c) => c.clienteMensal || c.apenasMensal).map((c) => c.nome));
   const producoesFaturaveis = producoes.filter((p) => !clientesApenasMensal.has(p.cliente));
 
+  const mesAtualStr = hoje().slice(0, 7);
+  const todasMensalidades = clientesCadastro.flatMap((c) => mensalidadesDoCliente(c).map((m) => ({ ...m, cliente: c.nome })));
+  const mensalidadesAteAgora = todasMensalidades.filter((m) => m.mes <= mesAtualStr);
+
   const totalHistorico = historicoFinanceiro.reduce((s, h) => s + (Number(h.valor) || 0), 0);
-  const receitaMensalRecorrente = clientesCadastro.reduce((s, c) => s + (Number(c.valorMensal) || 0), 0);
-  const recebidoRecorrente = clientesCadastro
-    .filter((c) => Number(c.valorMensal) > 0 && c.statusRecorrente === "Pago")
-    .reduce((s, c) => s + Number(c.valorMensal), 0);
-  const marcasComContrato = clientesCadastro.filter((c) => Number(c.valorMensal) > 0).length;
+  const receitaMensalRecorrente = mensalidadesAteAgora.reduce((s, m) => s + (Number(m.valor) || 0), 0);
+  const recebidoRecorrente = mensalidadesAteAgora.filter((m) => m.pago).reduce((s, m) => s + (Number(m.valor) || 0), 0);
+  const marcasComContrato = clientesCadastro.filter((c) => c.clienteMensal || c.apenasMensal).length;
 
   const total = producoesFaturaveis.reduce((s, p) => s + totalProducao(p, precos), 0) + totalHistorico + receitaMensalRecorrente;
   const recebido =
@@ -2037,11 +2085,14 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
     const mesStr = `${anoFinanceiro}-${String(i + 1).padStart(2, "0")}`;
     const doMes = producoesFaturaveis.filter((p) => (p.data || "").startsWith(mesStr));
     const historicoMes = historicoFinanceiro.filter((h) => h.mes === mesStr).reduce((s, h) => s + (Number(h.valor) || 0), 0);
-    const faturado = doMes.reduce((s, p) => s + totalProducao(p, precos), 0) + historicoMes + receitaMensalRecorrente;
+    const mensalidadesMes = todasMensalidades.filter((m) => m.mes === mesStr);
+    const recorrenteMes = mensalidadesMes.reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const recorrenteRecebidoMes = mensalidadesMes.filter((m) => m.pago).reduce((s, m) => s + (Number(m.valor) || 0), 0);
+    const faturado = doMes.reduce((s, p) => s + totalProducao(p, precos), 0) + historicoMes + recorrenteMes;
     const recebido =
       doMes.filter((p) => p.pagamentoStatus === "Pago").reduce((s, p) => s + totalProducao(p, precos), 0) +
       historicoMes +
-      recebidoRecorrente;
+      recorrenteRecebidoMes;
     return { mes: nome, faturado, recebido };
   });
 
@@ -2076,10 +2127,10 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
                   <b>{fmtBRL(totalProducao(p, precos))}</b>
                 </Card>
               ))}
-              {clientesCadastro.filter((c) => Number(c.valorMensal) > 0 && c.statusRecorrente !== "Pago").map((c) => (
-                <Card key={c.nome} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                  <span>{c.nome} — mensalidade</span>
-                  <b>{fmtBRL(c.valorMensal)}</b>
+              {mensalidadesAteAgora.filter((m) => !m.pago).map((m, i) => (
+                <Card key={`${m.cliente}-${m.mes}-${i}`} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                  <span>{m.cliente} — mensalidade {m.mes}</span>
+                  <b>{fmtBRL(m.valor)}</b>
                 </Card>
               ))}
               {aberto === 0 && <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center" }}>Nada em aberto no momento 🎉</p>}
@@ -2095,16 +2146,27 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setMostrarRecorrente(false)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%", maxHeight: "82vh", overflowY: "auto" }}>
             <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0 }}>Marcas com contrato mensal</h3>
-            <div style={{ display: "grid", gap: 8 }}>
-              {clientesCadastro.filter((c) => Number(c.valorMensal) > 0).map((c) => (
-                <Card key={c.nome} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-                  <span>{c.nome}</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <b>{fmtBRL(c.valorMensal)}</b>
-                    <Badge color={c.statusRecorrente === "Pago" ? "#566B4F" : "#B9862E"}>{c.statusRecorrente || "Em aberto"}</Badge>
-                  </span>
-                </Card>
-              ))}
+            <div style={{ display: "grid", gap: 10 }}>
+              {clientesCadastro.filter((c) => c.clienteMensal || c.apenasMensal).map((c) => {
+                const meses = mensalidadesDoCliente(c).slice().sort((a, b) => (a.mes < b.mes ? 1 : -1));
+                return (
+                  <Card key={c.nome} style={{ padding: "9px 12px" }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>{c.nome}</div>
+                    <div style={{ display: "grid", gap: 4 }}>
+                      {meses.map((m, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                          <span style={{ color: "#8A7F6E" }}>{m.mes}</span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <b>{fmtBRL(m.valor)}</b>
+                            <Badge color={m.pago ? "#566B4F" : "#B9862E"}>{m.pago ? "Pago" : "Em aberto"}</Badge>
+                          </span>
+                        </div>
+                      ))}
+                      {meses.length === 0 && <span style={{ fontSize: 12, color: "#8A7F6E" }}>Nenhum mês lançado ainda.</span>}
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
               <button onClick={() => setMostrarRecorrente(false)} style={btnGhost}>Fechar</button>
@@ -2415,9 +2477,26 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
   const [buscaCliente, setBuscaCliente] = useState("");
   const [filtroSegmento, setFiltroSegmento] = useState("");
 
-  const abrirNovoCliente = () => setEditandoContato({ novo: true, nome: "", telefone: "", email: "", instagram: "", linkDrive: "", segmentos: [], publico: [], valorMensal: 0, apenasMensal: false, statusRecorrente: "Em aberto", observacoes: "" });
+  const abrirNovoCliente = () => setEditandoContato({ novo: true, nome: "", telefone: "", email: "", instagram: "", linkDrive: "", segmentos: [], publico: [], clienteMensal: false, mensalidades: [], observacoes: "" });
   const abrirEditarContato = (c) =>
-    setEditandoContato({ novo: false, nome: c.nome, telefone: c.telefone, email: c.email, instagram: c.instagram, linkDrive: c.linkDrive, segmentos: c.segmentos || [], publico: c.publico || [], valorMensal: c.valorMensal || 0, apenasMensal: c.apenasMensal || false, statusRecorrente: c.statusRecorrente || "Em aberto", observacoes: c.observacoes });
+    setEditandoContato({
+      novo: false,
+      nome: c.nome,
+      telefone: c.telefone,
+      email: c.email,
+      instagram: c.instagram,
+      linkDrive: c.linkDrive,
+      segmentos: c.segmentos || [],
+      publico: c.publico || [],
+      clienteMensal: c.clienteMensal || c.apenasMensal || false,
+      mensalidades:
+        c.mensalidades && c.mensalidades.length
+          ? c.mensalidades
+          : c.valorMensal > 0
+          ? [{ mes: hoje().slice(0, 7), valor: c.valorMensal, pago: c.statusRecorrente === "Pago" }]
+          : [],
+      observacoes: c.observacoes,
+    });
 
   const alternarSegmento = (seg) => {
     setEditandoContato((atual) => {
@@ -2515,11 +2594,15 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
                     {pub}
                   </span>
                 ))}
-                {c.valorMensal > 0 && (
-                  <span className="font-mono" style={{ fontSize: 10, color: "#566B4F", background: "#E7EEE3", padding: "2px 8px", borderRadius: 999, fontWeight: 700 }}>
-                    {fmtBRL(c.valorMensal)}/mês
-                  </span>
-                )}
+                {(c.clienteMensal || c.apenasMensal) && (() => {
+                  const meses = mensalidadesDoCliente(c).slice().sort((a, b) => (a.mes < b.mes ? 1 : -1));
+                  const atual = meses.find((m) => m.mes === hoje().slice(0, 7)) || meses[0];
+                  return (
+                    <span className="font-mono" style={{ fontSize: 10, color: "#566B4F", background: "#E7EEE3", padding: "2px 8px", borderRadius: 999, fontWeight: 700 }}>
+                      {atual ? `${fmtBRL(atual.valor)}/mês` : "cliente mensal"}
+                    </span>
+                  );
+                })()}
               </div>
               <div style={{ fontSize: 12.5, color: "#8A7F6E" }}>
                 {c.qtd} produção(ões){c.ultima ? ` · última em ${fmtData(c.ultima)} · ` : " · nenhuma produção ainda"}
@@ -2638,9 +2721,9 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
                       {pub}
                     </span>
                   ))}
-                  {clienteDetalhe.valorMensal > 0 && (
+                  {(clienteDetalhe.clienteMensal || clienteDetalhe.apenasMensal) && (
                     <span className="font-mono" style={{ fontSize: 10.5, color: "#566B4F", background: "#E7EEE3", padding: "3px 9px", borderRadius: 999, fontWeight: 700 }}>
-                      {fmtBRL(clienteDetalhe.valorMensal)}/mês
+                      cliente mensal
                     </span>
                   )}
                 </div>
@@ -2652,9 +2735,6 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
               <StatCard label="Ensaios feitos" value={clienteDetalhe.qtd} />
               <StatCard label="Total investido" value={fmtBRL(clienteDetalhe.valorTotal)} accent="#7A2E22" />
               <StatCard label="Ticket médio" value={fmtBRL(clienteDetalhe.ticketMedio)} accent="#566B4F" />
-              {clienteDetalhe.valorMensal > 0 && (
-                <StatCard label="Contrato mensal" value={fmtBRL(clienteDetalhe.valorMensal)} accent="#566B4F" />
-              )}
               {clienteDetalhe.ultima && (
                 <StatCard
                   label="Sem produzir há"
@@ -2698,6 +2778,26 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
                 </div>
               )}
             </div>
+
+            {(clienteDetalhe.clienteMensal || clienteDetalhe.apenasMensal) && (
+              <>
+                <SectionTitle title="Mensalidades" />
+                <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
+                  {mensalidadesDoCliente(clienteDetalhe).slice().sort((a, b) => (a.mes < b.mes ? 1 : -1)).map((m, i) => (
+                    <Card key={i} style={{ padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                      <span style={{ color: "#8A7F6E" }}>{m.mes}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <b>{fmtBRL(m.valor)}</b>
+                        <Badge color={m.pago ? "#566B4F" : "#B9862E"}>{m.pago ? "Pago" : "Em aberto"}</Badge>
+                      </span>
+                    </Card>
+                  ))}
+                  {mensalidadesDoCliente(clienteDetalhe).length === 0 && (
+                    <p style={{ fontSize: 12.5, color: "#8A7F6E", margin: 0 }}>Nenhum mês lançado ainda — edite o contato pra adicionar.</p>
+                  )}
+                </div>
+              </>
+            )}
 
             <SectionTitle title="Histórico de produções" />
             <div style={{ display: "grid", gap: 8 }}>
@@ -2804,40 +2904,90 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
                   })}
                 </div>
               </Field>
-              <Field label="Valor mensal (contrato fixo com a marca, se houver)">
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
                 <input
-                  type="number"
-                  style={inputStyle}
-                  placeholder="0"
-                  value={editandoContato.valorMensal}
-                  onChange={(e) => setEditandoContato({ ...editandoContato, valorMensal: e.target.value === "" ? 0 : Number(e.target.value) })}
+                  type="checkbox"
+                  checked={editandoContato.clienteMensal}
+                  onChange={(e) => setEditandoContato({ ...editandoContato, clienteMensal: e.target.checked })}
                 />
-                <p style={{ fontSize: 11, color: "#8A7F6E", marginTop: 4 }}>
-                  Deixe 0 se a marca só paga por produção avulsa, sem mensalidade.
-                </p>
-              </Field>
-              {editandoContato.valorMensal > 0 && (
-                <>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={editandoContato.apenasMensal}
-                      onChange={(e) => setEditandoContato({ ...editandoContato, apenasMensal: e.target.checked })}
-                    />
-                    Cliente mensal fixo — cobrar só o valor mensal, ignorar quantidade de looks/vídeos nas produções dele
-                  </label>
-                  <Field label="Status do pagamento deste mês">
-                    <select
-                      style={inputStyle}
-                      value={editandoContato.statusRecorrente}
-                      onChange={(e) => setEditandoContato({ ...editandoContato, statusRecorrente: e.target.value })}
-                    >
-                      <option value="Em aberto">Em aberto</option>
-                      <option value="Pago">Pago</option>
-                    </select>
-                  </Field>
-                </>
+                É cliente mensal — cobrança fixa por mês, ignora quantidade de looks/vídeos nas produções dele
+              </label>
+
+              {editandoContato.clienteMensal && (
+                <div style={{ background: "#F8F3E8", borderRadius: 8, padding: "10px 12px" }}>
+                  <div className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+                    Mensalidades — quanto pagou e quanto pagará
+                  </div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {editandoContato.mensalidades.map((m, i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <input
+                          type="month"
+                          style={{ ...inputStyle, flex: 1 }}
+                          value={m.mes}
+                          onChange={(e) => {
+                            const novas = [...editandoContato.mensalidades];
+                            novas[i] = { ...novas[i], mes: e.target.value };
+                            setEditandoContato({ ...editandoContato, mensalidades: novas });
+                          }}
+                        />
+                        <input
+                          type="number"
+                          style={{ ...inputStyle, flex: 1 }}
+                          placeholder="valor"
+                          value={m.valor}
+                          onChange={(e) => {
+                            const novas = [...editandoContato.mensalidades];
+                            novas[i] = { ...novas[i], valor: e.target.value === "" ? "" : Number(e.target.value) };
+                            setEditandoContato({ ...editandoContato, mensalidades: novas });
+                          }}
+                        />
+                        <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, whiteSpace: "nowrap" }}>
+                          <input
+                            type="checkbox"
+                            checked={!!m.pago}
+                            onChange={(e) => {
+                              const novas = [...editandoContato.mensalidades];
+                              novas[i] = { ...novas[i], pago: e.target.checked };
+                              setEditandoContato({ ...editandoContato, mensalidades: novas });
+                            }}
+                          />
+                          pago
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setEditandoContato({ ...editandoContato, mensalidades: editandoContato.mensalidades.filter((_, idx) => idx !== i) })}
+                          style={{ ...btnGhost, color: "#A83B2E", padding: "6px 9px" }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    {editandoContato.mensalidades.length === 0 && (
+                      <p style={{ fontSize: 12, color: "#8A7F6E", margin: 0 }}>Nenhum mês lançado ainda.</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ultimoMes = editandoContato.mensalidades.length
+                        ? editandoContato.mensalidades[editandoContato.mensalidades.length - 1].mes
+                        : hoje().slice(0, 7);
+                      const [ano, mes] = ultimoMes.split("-").map(Number);
+                      const proximo = mes === 12 ? `${ano + 1}-01` : `${ano}-${String(mes + 1).padStart(2, "0")}`;
+                      const valorAnterior = editandoContato.mensalidades.length ? editandoContato.mensalidades[editandoContato.mensalidades.length - 1].valor : 0;
+                      setEditandoContato({
+                        ...editandoContato,
+                        mensalidades: [...editandoContato.mensalidades, { mes: editandoContato.mensalidades.length ? proximo : hoje().slice(0, 7), valor: valorAnterior, pago: false }],
+                      });
+                    }}
+                    style={{ ...btnGhost, marginTop: 8, fontSize: 12.5 }}
+                  >
+                    + Adicionar mês
+                  </button>
+                </div>
               )}
+
               <Field label="Observações (preferências, particularidades)">
                 <textarea rows={3} style={{ ...inputStyle, resize: "vertical" }} value={editandoContato.observacoes} onChange={(e) => setEditandoContato({ ...editandoContato, observacoes: e.target.value })} />
               </Field>
@@ -2854,9 +3004,8 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
 }
 
 // ---------- Config ----------
-function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perfis, salvarPerfis, usuario, webhookSheets, salvarWebhookSheets, statusSync, sincronizando, clientesCadastro, salvarClientesCadastro, producoes, salvarProducoes, segmentosDisponiveis, salvarSegmentosDisponiveis, modelos, salvarModelos, cenariosDisponiveis, salvarCenariosDisponiveis }) {
+function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSheets, salvarWebhookSheets, statusSync, sincronizando, clientesCadastro, salvarClientesCadastro, producoes, salvarProducoes, segmentosDisponiveis, salvarSegmentosDisponiveis, modelos, salvarModelos, cenariosDisponiveis, salvarCenariosDisponiveis }) {
   const [local, setLocal] = useState(precos);
-  const [tarefasTexto, setTarefasTexto] = useState(tarefasModelo.join("\n"));
   const [novoNome, setNovoNome] = useState("");
   const [novoPapel, setNovoPapel] = useState("equipe");
   const [novoPin, setNovoPin] = useState("");
@@ -2883,7 +3032,6 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
       clientesCadastro,
       modelos,
       precos,
-      tarefasModelo,
       segmentosDisponiveis,
       perfis: perfis.map(({ pin, ...resto }) => resto),
     };
@@ -2920,7 +3068,6 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
     salvarClientesCadastro(backupPendente.clientesCadastro || []);
     if (backupPendente.modelos) salvarModelos(backupPendente.modelos);
     if (backupPendente.precos) salvarPrecos(backupPendente.precos);
-    if (backupPendente.tarefasModelo) salvarTarefasModelo(backupPendente.tarefasModelo);
     if (backupPendente.segmentosDisponiveis) salvarSegmentosDisponiveis(backupPendente.segmentosDisponiveis);
     setBackupPendente(null);
     setTimeout(() => setRestaurando(false), 600);
@@ -3557,27 +3704,6 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
         )}
       </Card>
 
-      <SectionTitle title="Checklist padrão de tarefas" />
-      <Card style={{ padding: 18, maxWidth: 420 }}>
-        <Field label="Uma tarefa por linha">
-          <textarea
-            rows={7}
-            style={{ ...inputStyle, resize: "vertical" }}
-            value={tarefasTexto}
-            onChange={(e) => setTarefasTexto(e.target.value)}
-          />
-        </Field>
-        <button
-          onClick={() => salvarTarefasModelo(tarefasTexto.split("\n").map((s) => s.trim()).filter(Boolean))}
-          style={btnPrimario}
-        >
-          Salvar checklist
-        </button>
-        <p style={{ fontSize: 12, color: "#8A7F6E", marginTop: 10 }}>
-          Esse checklist é aplicado automaticamente a cada nova produção criada.
-        </p>
-      </Card>
-
       {removendoPerfil && (
         <ConfirmarExclusao
           titulo="Remover acesso?"
@@ -3922,7 +4048,14 @@ function CartaoModelo({ modelo, onEditar, onExcluir }) {
           {modelo.numeracao && <span>numeração: {modelo.numeracao}</span>}
           {modelo.sapato && <span>sapato: {modelo.sapato}</span>}
         </div>
-        <div style={{ fontSize: 13, marginTop: 4, color: "#7A2E22", fontWeight: 600 }}>{fmtBRL(modelo.valorPorLook)} / look</div>
+        <div style={{ fontSize: 13, marginTop: 4, color: "#7A2E22", fontWeight: 600 }}>
+          {fmtBRL(modelo.valorPorLook)} / look
+          {modelo.valorAtualizadoEm && (
+            <span className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", fontWeight: 500, marginLeft: 8 }}>
+              atualizado em {fmtMesAno(modelo.valorAtualizadoEm)}
+            </span>
+          )}
+        </div>
 
         {(modelo.whatsapp || modelo.instagram || modelo.linkDrive) && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", marginTop: 6, fontSize: 12 }}>
@@ -3976,8 +4109,33 @@ function CartaoModelo({ modelo, onEditar, onExcluir }) {
 function Modelos({ modelos, onNovo, onEditar, onExcluir }) {
   const [excluindo, setExcluindo] = useState(null);
   const [abertos, setAbertos] = useState({});
+  const [copiado, setCopiado] = useState(false);
+
+  const linkCatalogo =
+    typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}?catalogo=1` : "";
+
+  const copiarLink = () => {
+    navigator.clipboard?.writeText(linkCatalogo).then(() => {
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 1500);
+    });
+  };
+
+  const linkWhatsapp = `https://wa.me/?text=${encodeURIComponent(`Dá uma olhada nas modelos do Studio Aroeira: ${linkCatalogo}`)}`;
+
   return (
     <div>
+      <Card style={{ padding: 16, marginBottom: 18, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+        <div style={{ fontSize: 13, color: "#6B6153" }}>
+          Catálogo de modelos pra mandar pro cliente — com foto, medidas e valor por look (sem contato do modelo nem suas notas internas).
+        </div>
+        <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+          <button onClick={copiarLink} style={btnGhost}>{copiado ? "✓ Link copiado" : "🔗 Copiar link"}</button>
+          <a href={linkWhatsapp} target="_blank" rel="noreferrer" style={{ ...btnPrimario, marginTop: 0, textDecoration: "none", display: "inline-block" }}>
+            Enviar por WhatsApp
+          </a>
+        </div>
+      </Card>
       {PUBLICO_OPCOES.map((categoria) => {
         const doGrupo = modelos.filter((m) => m.categoria === categoria).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
         const aberto = !!abertos[categoria];
@@ -4122,7 +4280,15 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
           </div>
 
           <Field label="Valor por look (R$)">
-            <input type="number" style={inputStyle} value={m.valorPorLook} onChange={(e) => setModelo({ ...m, valorPorLook: Number(e.target.value) })} />
+            <input
+              type="number"
+              style={inputStyle}
+              value={m.valorPorLook}
+              onChange={(e) => setModelo({ ...m, valorPorLook: Number(e.target.value), valorAtualizadoEm: Date.now() })}
+            />
+            {m.valorAtualizadoEm && (
+              <p style={{ fontSize: 11, color: "#8A7F6E", margin: "4px 0 0" }}>Atualizado em {fmtMesAno(m.valorAtualizadoEm)}</p>
+            )}
           </Field>
 
           <Field label="WhatsApp do modelo (ou do responsável, se Kids)">
