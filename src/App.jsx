@@ -516,20 +516,32 @@ export default function StudioAroeiraOS() {
     } catch (e) {}
   }, []);
 
-  const registrarNotificacao = useCallback((tipo, mensagem) => {
+  const registrarNotificacao = useCallback((tipo, mensagem, destinatarios = []) => {
     setNotificacoes((atual) => {
-      const nova = { id: uid(), tipo, mensagem, por: usuario?.nome || "alguém", em: Date.now() };
+      const nova = { id: uid(), tipo, mensagem, por: usuario?.nome || "alguém", em: Date.now(), destinatarios };
       const novas = [...atual, nova].slice(-50);
       storage.set("notificacoes", JSON.stringify(novas), true).catch(() => {});
       return novas;
     });
   }, [usuario]);
 
+  const sinalizarProblema = useCallback((producao, texto) => {
+    registrarNotificacao("aviso", `⚠️ Aviso sobre ${producao.cliente} (${fmtData(producao.data)}): ${texto}`);
+  }, [registrarNotificacao]);
+
   const marcarNotificacoesVistas = useCallback(() => {
     const agora = Date.now();
     setUltimaVista(agora);
     storage.set("notificacao-vista", String(agora), false).catch(() => {});
   }, []);
+
+  const notificacoesVisiveis = useMemo(
+    () =>
+      notificacoes.filter(
+        (n) => isAdmin || !n.destinatarios || n.destinatarios.length === 0 || (usuario && n.destinatarios.includes(usuario.nome))
+      ),
+    [notificacoes, isAdmin, usuario]
+  );
 
   const novoModelo = (categoria) =>
     setEditandoModelo({
@@ -916,7 +928,7 @@ export default function StudioAroeiraOS() {
               aria-label="Notificações"
             >
               🔔
-              {notificacoes.filter((n) => n.em > ultimaVista).length > 0 && (
+              {notificacoesVisiveis.filter((n) => n.em > ultimaVista).length > 0 && (
                 <span
                   style={{
                     position: "absolute",
@@ -935,7 +947,7 @@ export default function StudioAroeiraOS() {
                     padding: "0 3px",
                   }}
                 >
-                  {Math.min(notificacoes.filter((n) => n.em > ultimaVista).length, 99)}
+                  {Math.min(notificacoesVisiveis.filter((n) => n.em > ultimaVista).length, 99)}
                 </span>
               )}
             </button>
@@ -961,8 +973,8 @@ export default function StudioAroeiraOS() {
                   <div className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", padding: "10px 14px 6px" }}>
                     Notificações
                   </div>
-                  {[...notificacoes].reverse().map((n) => {
-                    const cor = n.tipo === "novo" ? "#566B4F" : n.tipo === "cancelado" ? "#A83B2E" : "#B9862E";
+                  {[...notificacoesVisiveis].reverse().map((n) => {
+                    const cor = n.tipo === "novo" ? "#566B4F" : n.tipo === "cancelado" ? "#A83B2E" : n.tipo === "aviso" ? "#A83B2E" : n.tipo === "recado" ? "#3E6B8A" : "#B9862E";
                     return (
                       <div key={n.id} style={{ padding: "8px 14px", borderTop: "1px solid #F0E8D6", display: "flex", gap: 8 }}>
                         <span style={{ width: 7, height: 7, borderRadius: 999, background: cor, marginTop: 5, flexShrink: 0 }} />
@@ -970,12 +982,13 @@ export default function StudioAroeiraOS() {
                           <div style={{ fontSize: 12.5 }}>{n.mensagem}</div>
                           <div className="font-mono" style={{ fontSize: 10, color: "#B0A388", marginTop: 2 }}>
                             {n.por} · {fmtDataHora(n.em)}
+                            {n.destinatarios && n.destinatarios.length > 0 && <> · só p/ {n.destinatarios.join(", ")}</>}
                           </div>
                         </div>
                       </div>
                     );
                   })}
-                  {notificacoes.length === 0 && (
+                  {notificacoesVisiveis.length === 0 && (
                     <div style={{ padding: "18px 14px", fontSize: 12.5, color: "#8A7F6E", textAlign: "center" }}>
                       Nenhuma notificação ainda.
                     </div>
@@ -1021,7 +1034,7 @@ export default function StudioAroeiraOS() {
       <main style={{ flex: 1, padding: "18px 16px calc(env(safe-area-inset-bottom, 0px) + 96px)", maxWidth: 1180, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
         {isAdmin && tab === "dashboard" && <Dashboard producoes={producoes} precos={precos} clientes={clientes} historicoFinanceiro={historicoFinanceiro} />}
         {tab === "quadro" && <Quadro producoes={isAdmin ? producoes : minhasProducoes} onStatusChange={mudarStatus} />}
-        {!isAdmin && tab === "painel" && <PainelEquipe producoes={minhasProducoes} usuario={usuario} />}
+        {!isAdmin && tab === "painel" && <PainelEquipe producoes={minhasProducoes} usuario={usuario} onAvisarProblema={sinalizarProblema} />}
         {tab === "producoes" && (
           <Producoes
             producoes={producoesFiltradas}
@@ -1032,6 +1045,7 @@ export default function StudioAroeiraOS() {
             onExcluir={excluirProducao}
             onDuplicar={duplicarProducao}
             onStatusChange={mudarStatus}
+            onAvisarProblema={sinalizarProblema}
             precos={precos}
             isAdmin={isAdmin}
             titulo={isAdmin ? "Produções" : "Minhas produções"}
@@ -1088,6 +1102,7 @@ export default function StudioAroeiraOS() {
             salvarModelos={salvarModelos}
             cenariosDisponiveis={cenariosDisponiveis}
             salvarCenariosDisponiveis={salvarCenariosDisponiveis}
+            registrarNotificacao={registrarNotificacao}
           />
         )}
       </main>
@@ -1244,9 +1259,10 @@ function SecaoRecolhivel({ titulo, aberto, onToggle, extra, children }) {
 }
 
 // ---------- Painel da equipe (sem valores) ----------
-function PainelEquipe({ producoes, usuario }) {
+function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
   const t = hoje();
   const [detalhe, setDetalhe] = useState(null);
+  const [avisando, setAvisando] = useState(null);
 
   const inicioSemana = new Date();
   inicioSemana.setDate(inicioSemana.getDate() - inicioSemana.getDay());
@@ -1258,17 +1274,50 @@ function PainelEquipe({ producoes, usuario }) {
   const semana = producoes.filter((p) => p.data >= isoSemana && p.data <= isoFimSemana);
   const entregasPendentes = producoes.filter((p) => !["Entregue ao cliente", "Aprovado"].includes(p.status) && p.prazo <= t);
 
+  const agora = new Date();
+  const proximoEnsaio = producoes
+    .filter((p) => p.data > t || (p.data === t && p.horario >= `${String(agora.getHours()).padStart(2, "0")}:${String(agora.getMinutes()).padStart(2, "0")}`))
+    .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1))[0];
+
   const listaEnsaios = (lista) =>
     lista
       .slice()
       .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1))
       .map((p) => [p.cliente, fmtData(p.data), p.horario || "—", p.status]);
 
+  const aprovadas = producoes.filter((p) => p.status === STATUS_CONCLUIDO);
+  const prazosEntrega = aprovadas
+    .map((p) => {
+      const entrada = (p.historico || []).find((h) => h.status === STATUS_CONCLUIDO);
+      if (!entrada) return null;
+      return diasEntre(p.data, new Date(entrada.em).toISOString().slice(0, 10));
+    })
+    .filter((v) => v !== null && v >= 0);
+  const tempoMedioEntrega = prazosEntrega.length ? Math.round(prazosEntrega.reduce((s, v) => s + v, 0) / prazosEntrega.length) : null;
+  const taxaAprovacao = producoes.length ? Math.round((aprovadas.length / producoes.length) * 100) : null;
+
   return (
     <div>
       <p className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", marginBottom: 16 }}>
         Olá, {usuario.nome} — aqui está sua semana.
       </p>
+
+      {proximoEnsaio && (
+        <Card style={{ padding: 16, marginBottom: 18, borderColor: "#7A2E22" }}>
+          <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 6 }}>
+            Próximo ensaio
+          </div>
+          <div className="font-display" style={{ fontSize: 18, fontWeight: 600 }}>{proximoEnsaio.cliente}</div>
+          <div style={{ fontSize: 13.5, color: "#6B6153", marginTop: 4 }}>
+            {fmtData(proximoEnsaio.data)} às {proximoEnsaio.horario}
+            {proximoEnsaio.localizacao && <> · 📍 {proximoEnsaio.localizacao}</>}
+          </div>
+          <button onClick={() => setAvisando(proximoEnsaio)} style={{ ...btnGhost, marginTop: 10, color: "#A83B2E" }}>
+            ⚠️ Avisar administração
+          </button>
+        </Card>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px,1fr))", gap: 12, marginBottom: 26 }}>
         <StatCard
           label="Ensaios da semana"
@@ -1282,6 +1331,35 @@ function PainelEquipe({ producoes, usuario }) {
           onClick={() => setDetalhe({ titulo: "Minhas entregas pendentes", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(entregasPendentes) })}
         />
       </div>
+
+      <SectionTitle title="Meu desempenho" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px,1fr))", gap: 12, marginBottom: 26 }}>
+        <StatCard
+          label="Produções (total)"
+          value={producoes.length}
+          onClick={() => setDetalhe({ titulo: "Todas as minhas produções", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(producoes) })}
+        />
+        <StatCard
+          label="Aprovadas"
+          value={aprovadas.length}
+          accent="#566B4F"
+          sub={taxaAprovacao !== null ? `${taxaAprovacao}% do total` : null}
+          onClick={() => setDetalhe({ titulo: "Minhas produções aprovadas", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(aprovadas) })}
+        />
+        <StatCard
+          label="Tempo médio de entrega"
+          value={tempoMedioEntrega !== null ? `${tempoMedioEntrega} dia(s)` : "—"}
+          accent="#3E6B8A"
+        />
+      </div>
+
+      {avisando && (
+        <ModalAvisoProblema
+          producao={avisando}
+          onFechar={() => setAvisando(null)}
+          onEnviar={(texto) => onAvisarProblema(avisando, texto)}
+        />
+      )}
 
       {detalhe && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setDetalhe(null)}>
@@ -1707,11 +1785,12 @@ function Quadro({ producoes, onStatusChange }) {
 }
 
 // ---------- Produções ----------
-function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, onDuplicar, onStatusChange, precos, isAdmin, titulo }) {
+function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, onDuplicar, onStatusChange, onAvisarProblema, precos, isAdmin, titulo }) {
   const [filtroStatus, setFiltroStatus] = useState("");
   const [filtroResponsavel, setFiltroResponsavel] = useState("");
   const [filtroPeriodo, setFiltroPeriodo] = useState("semana");
   const [excluindo, setExcluindo] = useState(null);
+  const [avisando, setAvisando] = useState(null);
 
   const responsaveis = Array.from(
     new Set(
@@ -1923,6 +2002,7 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
                     >
                       📅 Google Agenda
                     </a>
+                    <button onClick={() => setAvisando(p)} style={{ ...btnGhost, color: "#A83B2E" }}>⚠️ Avisar administração</button>
                     {isAdmin && (
                       <>
                         <button onClick={() => onEditar(p)} style={btnGhost}>Editar</button>
@@ -1941,12 +2021,20 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
       {excluindo && (
         <ConfirmarExclusao
           titulo="Excluir produção?"
-          mensagem={`Isso vai apagar "${excluindo.cliente}" (${fmtData(excluindo.data)}) permanentemente, incluindo o checklist e o histórico dela.`}
+          mensagem={`Isso vai apagar "${excluindo.cliente}" (${fmtData(excluindo.data)}) permanentemente, incluindo o histórico dela.`}
           onCancelar={() => setExcluindo(null)}
           onConfirmar={() => {
             onExcluir(excluindo.id);
             setExcluindo(null);
           }}
+        />
+      )}
+
+      {avisando && (
+        <ModalAvisoProblema
+          producao={avisando}
+          onFechar={() => setAvisando(null)}
+          onEnviar={(texto) => onAvisarProblema(avisando, texto)}
         />
       )}
     </div>
@@ -1976,6 +2064,54 @@ function ConfirmarExclusao({ titulo, mensagem, onConfirmar, onCancelar }) {
           <button onClick={onCancelar} style={btnGhost}>Cancelar</button>
           <button onClick={onConfirmar} style={{ background: "#A83B2E", color: "#FBF4E9", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>
             Sim, excluir
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalAvisoProblema({ producao, onFechar, onEnviar }) {
+  const [texto, setTexto] = useState("");
+  const [enviado, setEnviado] = useState(false);
+
+  if (enviado) {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 70 }} onClick={onFechar}>
+        <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 22, maxWidth: 340, width: "100%", textAlign: "center" }}>
+          <p style={{ fontSize: 14, color: "#566B4F", margin: 0 }}>✓ Aviso enviado pra administração.</p>
+          <button onClick={onFechar} style={{ ...btnGhost, marginTop: 14 }}>Fechar</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 70 }} onClick={onFechar}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 22, maxWidth: 360, width: "100%" }}>
+        <h3 className="font-display" style={{ fontSize: 17, fontWeight: 600, marginTop: 0, marginBottom: 4 }}>⚠️ Avisar administração</h3>
+        <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0, marginBottom: 12 }}>
+          Sobre {producao.cliente} — {fmtData(producao.data)}
+        </p>
+        <textarea
+          rows={3}
+          autoFocus
+          style={{ ...inputStyle, resize: "vertical" }}
+          placeholder="ex.: modelo cancelou, local mudou, atraso…"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+        />
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+          <button onClick={onFechar} style={btnGhost}>Cancelar</button>
+          <button
+            onClick={() => {
+              if (!texto.trim()) return;
+              onEnviar(texto.trim());
+              setEnviado(true);
+            }}
+            style={{ background: "#A83B2E", color: "#FBF4E9", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}
+          >
+            Enviar aviso
           </button>
         </div>
       </div>
@@ -3004,7 +3140,7 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
 }
 
 // ---------- Config ----------
-function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSheets, salvarWebhookSheets, statusSync, sincronizando, clientesCadastro, salvarClientesCadastro, producoes, salvarProducoes, segmentosDisponiveis, salvarSegmentosDisponiveis, modelos, salvarModelos, cenariosDisponiveis, salvarCenariosDisponiveis }) {
+function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSheets, salvarWebhookSheets, statusSync, sincronizando, clientesCadastro, salvarClientesCadastro, producoes, salvarProducoes, segmentosDisponiveis, salvarSegmentosDisponiveis, modelos, salvarModelos, cenariosDisponiveis, salvarCenariosDisponiveis, registrarNotificacao }) {
   const [local, setLocal] = useState(precos);
   const [novoNome, setNovoNome] = useState("");
   const [novoPapel, setNovoPapel] = useState("equipe");
@@ -3015,6 +3151,10 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
   const [carregandoFotoPerfil, setCarregandoFotoPerfil] = useState(null);
   const [novoSegmento, setNovoSegmento] = useState("");
   const [novoCenario, setNovoCenario] = useState("");
+  const [textoNotificacao, setTextoNotificacao] = useState("");
+  const [tipoDestinatario, setTipoDestinatario] = useState("todos");
+  const [selecionadosNotificacao, setSelecionadosNotificacao] = useState([]);
+  const [notificacaoEnviada, setNotificacaoEnviada] = useState(false);
   const [removendoPerfil, setRemovendoPerfil] = useState(null);
   const [linkSheets, setLinkSheets] = useState(webhookSheets || "");
   const [importResultado, setImportResultado] = useState(null); // {novos, atualizados} | {erro}
@@ -3307,6 +3447,80 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
 
   return (
     <div>
+      <SectionTitle title="Enviar notificação" />
+      <Card style={{ padding: 18, marginBottom: 24, maxWidth: 480 }}>
+        <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
+          Manda um recado pro sininho de notificação — pra todo mundo, ou só pra quem você escolher.
+        </p>
+        <Field label="Mensagem">
+          <textarea
+            rows={3}
+            style={{ ...inputStyle, resize: "vertical" }}
+            placeholder="ex.: sexta-feira o estúdio fecha às 16h"
+            value={textoNotificacao}
+            onChange={(e) => setTextoNotificacao(e.target.value)}
+          />
+        </Field>
+
+        <div style={{ display: "flex", gap: 14, margin: "10px 0" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+            <input type="radio" checked={tipoDestinatario === "todos"} onChange={() => setTipoDestinatario("todos")} />
+            Todos
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+            <input type="radio" checked={tipoDestinatario === "selecionados"} onChange={() => setTipoDestinatario("selecionados")} />
+            Selecionar pessoas
+          </label>
+        </div>
+
+        {tipoDestinatario === "selecionados" && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+            {perfis.filter((p) => (p.status || "aprovado") === "aprovado").map((p) => {
+              const ativo = selecionadosNotificacao.includes(p.nome);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() =>
+                    setSelecionadosNotificacao(ativo ? selecionadosNotificacao.filter((n) => n !== p.nome) : [...selecionadosNotificacao, p.nome])
+                  }
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: 999,
+                    border: "1px solid " + (ativo ? "#3E6B8A" : "#DCCFB2"),
+                    background: ativo ? "#3E6B8A" : "transparent",
+                    color: ativo ? "#FBF4E9" : "#6B6153",
+                    fontSize: 12.5,
+                    fontWeight: ativo ? 700 : 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  {p.nome}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <button
+          onClick={() => {
+            if (!textoNotificacao.trim()) return;
+            const destinatarios = tipoDestinatario === "selecionados" ? selecionadosNotificacao : [];
+            if (tipoDestinatario === "selecionados" && destinatarios.length === 0) return;
+            registrarNotificacao("recado", textoNotificacao.trim(), destinatarios);
+            setTextoNotificacao("");
+            setSelecionadosNotificacao([]);
+            setTipoDestinatario("todos");
+            setNotificacaoEnviada(true);
+            setTimeout(() => setNotificacaoEnviada(false), 2500);
+          }}
+          style={btnPrimario}
+        >
+          Enviar notificação
+        </button>
+        {notificacaoEnviada && <p style={{ fontSize: 12.5, color: "#566B4F", marginTop: 8 }}>✓ Notificação enviada.</p>}
+      </Card>
+
       <SectionTitle title="Backup" />
       <Card style={{ padding: 18, marginBottom: 24, maxWidth: 480 }}>
         <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
