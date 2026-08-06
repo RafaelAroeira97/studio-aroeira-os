@@ -4231,6 +4231,7 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
   const p = producao;
   const set = (campo) => (e) => setProducao({ ...p, [campo]: e.target.value });
   const setNum = (campo) => (e) => setProducao({ ...p, [campo]: e.target.value === "" ? "" : Number(e.target.value) });
+  const [mostrarDetalhes, setMostrarDetalhes] = useState(!!p.id);
 
   const slots = p.modelosSlots && p.modelosSlots.length ? p.modelosSlots : [{ modeloId: p.modeloId || "", modelo: p.modelo || "" }];
 
@@ -4311,6 +4312,42 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
               {(clientesCadastro || []).map((c) => <option key={c.nome} value={c.nome} />)}
             </datalist>
           </Field>
+          <Field label="Fotógrafo">
+            <CampoResponsavel capacidade="Fotógrafo" valor={p.fotografo} onChange={(v) => setProducao({ ...p, fotografo: v })} perfis={perfis} />
+          </Field>
+          <Field label="Data"><input type="date" style={inputStyle} value={p.data} onChange={set("data")} /></Field>
+          <Field label="Horário"><input type="time" style={inputStyle} value={p.horario} onChange={set("horario")} /></Field>
+          <Field label="Prazo de entrega"><input type="date" style={inputStyle} value={p.prazo} onChange={set("prazo")} /></Field>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setMostrarDetalhes(!mostrarDetalhes)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "14px 0 4px",
+            color: "#7A2E22",
+            fontSize: 13.5,
+            fontWeight: 600,
+          }}
+        >
+          {mostrarDetalhes ? "− Menos detalhes" : "+ Mais detalhes"}
+          <span style={{ fontSize: 11, transform: mostrarDetalhes ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▾</span>
+        </button>
+
+        {!mostrarDetalhes && (
+          <p style={{ fontSize: 11.5, color: "#8A7F6E", margin: "2px 0 0" }}>
+            Modelo, cenário, equipe de vídeo, quantidades, status e mais ficam aqui.
+          </p>
+        )}
+
+        {mostrarDetalhes && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10, paddingTop: 10, borderTop: "1px solid #F0E8D6" }}>
           <div />
           <div style={{ gridColumn: "1 / -1" }}>
             <div className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 6 }}>
@@ -4367,8 +4404,6 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
               </div>
             );
           })}
-          <Field label="Data"><input type="date" style={inputStyle} value={p.data} onChange={set("data")} /></Field>
-          <Field label="Horário"><input type="time" style={inputStyle} value={p.horario} onChange={set("horario")} /></Field>
           {!p.id && (
             <div style={{ gridColumn: "1 / -1", background: "#F8F3E8", borderRadius: 8, padding: "10px 12px" }}>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
@@ -4505,10 +4540,6 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
           <Field label="Qtd. vídeos lookbook"><input type="number" style={inputStyle} value={p.videos} onChange={setNum("videos")} /></Field>
           <Field label="Qtd. prato (gastronomia)"><input type="number" style={inputStyle} value={p.qtdPrato} onChange={setNum("qtdPrato")} /></Field>
           <Field label="Qtd. foto corporativa"><input type="number" style={inputStyle} value={p.qtdFotoCorporativa} onChange={setNum("qtdFotoCorporativa")} /></Field>
-          <Field label="Prazo de entrega"><input type="date" style={inputStyle} value={p.prazo} onChange={set("prazo")} /></Field>
-          <Field label="Fotógrafo">
-            <CampoResponsavel capacidade="Fotógrafo" valor={p.fotografo} onChange={(v) => setProducao({ ...p, fotografo: v })} perfis={perfis} />
-          </Field>
           <Field label="Editor de foto">
             <CampoResponsavel capacidade="Editor de foto" valor={p.editor} onChange={(v) => setProducao({ ...p, editor: v })} perfis={perfis} />
           </Field>
@@ -4544,15 +4575,20 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
             </select>
           </Field>
         </div>
+        )}
 
-        <div style={{ marginTop: 12 }}>
-          <Field label="Referências"><input style={inputStyle} value={p.referencias} onChange={set("referencias")} /></Field>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <Field label="Observações">
-            <textarea rows={3} style={{ ...inputStyle, resize: "vertical" }} value={p.observacoes} onChange={set("observacoes")} />
-          </Field>
-        </div>
+        {mostrarDetalhes && (
+        <>
+          <div style={{ marginTop: 12 }}>
+            <Field label="Referências"><input style={inputStyle} value={p.referencias} onChange={set("referencias")} /></Field>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <Field label="Observações">
+              <textarea rows={3} style={{ ...inputStyle, resize: "vertical" }} value={p.observacoes} onChange={set("observacoes")} />
+            </Field>
+          </div>
+        </>
+        )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
           <button onClick={onFechar} style={btnGhost}>Cancelar</button>
