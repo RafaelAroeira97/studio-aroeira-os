@@ -9,23 +9,21 @@ const ICONE_AROEIRA = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABQAAAARfCAM
 // ---------- constantes ----------
 const STATUS_PRODUCAO = [
   "Agendado",
-  "Em produção",
   "Em edição",
-  "Verificando alterações",
+  "Entregue ao cliente",
   "Aprovado",
-  "Entregue",
-  "Finalizado",
+  "Alteração",
 ];
 
 const STATUS_COR = {
   "Agendado": "#8A7F6E",
-  "Em produção": "#B9862E",
   "Em edição": "#B9862E",
-  "Verificando alterações": "#7A2E22",
-  "Aprovado": "#3E6B8A",
-  "Entregue": "#566B4F",
-  "Finalizado": "#3F4F3A",
+  "Entregue ao cliente": "#3E6B8A",
+  "Aprovado": "#3F4F3A",
+  "Alteração": "#A83B2E",
 };
+
+const STATUS_CONCLUIDO = "Aprovado"; // status que conta como "finalizado" em cálculos e no Quadro
 
 const STATUS_PAGAMENTO = ["Em aberto", "Pago", "Parcialmente pago", "Cancelado"];
 
@@ -238,6 +236,7 @@ export default function StudioAroeiraOS() {
   const [webhookSheets, setWebhookSheets] = useState("");
   const [statusSync, setStatusSync] = useState(null); // 'ok' | 'erro' | null
   const [sincronizando, setSincronizando] = useState(false);
+  const [cenariosDisponiveis, setCenariosDisponiveis] = useState([]);
   const [modelos, setModelos] = useState([]);
   const [historicoFinanceiro, setHistoricoFinanceiro] = useState([]);
   const [despesasFixas, setDespesasFixas] = useState({
@@ -312,6 +311,10 @@ export default function StudioAroeiraOS() {
         if (wh) setWebhookSheets(wh.value);
       } catch (e) {}
       try {
+        const cn = await storage.get("cenarios-disponiveis", true);
+        if (cn) setCenariosDisponiveis(JSON.parse(cn.value));
+      } catch (e) {}
+      try {
         const md = await storage.get("modelos", true);
         if (md) setModelos(JSON.parse(md.value));
       } catch (e) {}
@@ -376,6 +379,14 @@ export default function StudioAroeiraOS() {
     setSegmentosDisponiveis(novos);
     try {
       await storage.set("segmentos-disponiveis", JSON.stringify(novos), true);
+      mostrarSalvo();
+    } catch (e) {}
+  }, []);
+
+  const salvarCenariosDisponiveis = useCallback(async (novos) => {
+    setCenariosDisponiveis(novos);
+    try {
+      await storage.set("cenarios-disponiveis", JSON.stringify(novos), true);
       mostrarSalvo();
     } catch (e) {}
   }, []);
@@ -1004,6 +1015,8 @@ export default function StudioAroeiraOS() {
             salvarSegmentosDisponiveis={salvarSegmentosDisponiveis}
             modelos={modelos}
             salvarModelos={salvarModelos}
+            cenariosDisponiveis={cenariosDisponiveis}
+            salvarCenariosDisponiveis={salvarCenariosDisponiveis}
           />
         )}
       </main>
@@ -1015,6 +1028,8 @@ export default function StudioAroeiraOS() {
           onSalvar={salvarEdicao}
           modelos={modelos}
           segmentosDisponiveis={segmentosDisponiveis}
+          cenariosDisponiveis={cenariosDisponiveis}
+          clientesCadastro={clientesCadastro}
           perfis={perfis}
           onFechar={() => {
             setEditando(null);
@@ -1170,7 +1185,7 @@ function PainelEquipe({ producoes, usuario }) {
   const isoFimSemana = fimSemana.toISOString().slice(0, 10);
 
   const semana = producoes.filter((p) => p.data >= isoSemana && p.data <= isoFimSemana);
-  const entregasPendentes = producoes.filter((p) => !["Entregue", "Finalizado"].includes(p.status) && p.prazo <= t);
+  const entregasPendentes = producoes.filter((p) => !["Entregue ao cliente", "Aprovado"].includes(p.status) && p.prazo <= t);
 
   const listaEnsaios = (lista) =>
     lista
@@ -1242,7 +1257,7 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
   const [anoSelecionado, setAnoSelecionado] = useState(t.slice(0, 4));
 
   const doDia = producoes.filter((p) => p.data === t);
-  const entregasPendentesTodas = producoes.filter((p) => !["Entregue", "Finalizado"].includes(p.status));
+  const entregasPendentesTodas = producoes.filter((p) => !["Entregue ao cliente", "Aprovado"].includes(p.status));
   const entregasPendentesHoje = entregasPendentesTodas.filter((p) => p.prazo === t);
   const atrasadas = entregasPendentesTodas.filter((p) => p.prazo < t);
   const pagamentosPendentes = producoes.filter((p) => ["Em aberto", "Parcialmente pago"].includes(p.pagamentoStatus));
@@ -1253,7 +1268,7 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
   const isoSemana = inicioSemana.toISOString().slice(0, 10);
   const semana = producoes.filter((p) => p.data >= isoSemana);
   const faturamentoPrevistoSemana = semana.reduce((s, p) => s + totalProducao(p, precos), 0);
-  const concluidasSemana = semana.filter((p) => p.status === "Finalizado").length;
+  const concluidasSemana = semana.filter((p) => p.status === STATUS_CONCLUIDO).length;
 
   const historicoDoMes = historicoFinanceiro.filter((h) => h.mes === mesSelecionado).reduce((s, h) => s + (Number(h.valor) || 0), 0);
   const historicoDoAno = historicoFinanceiro.filter((h) => h.mes.startsWith(anoSelecionado)).reduce((s, h) => s + (Number(h.valor) || 0), 0);
@@ -1319,10 +1334,10 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
 
   const produtividade = nomesEquipe.map((nome) => {
     const doColaborador = producoes.filter((p) => [p.fotografo, p.filmmaker, p.editor, p.storymaker].includes(nome));
-    const finalizadas = doColaborador.filter((p) => p.status === "Finalizado");
+    const finalizadas = doColaborador.filter((p) => p.status === STATUS_CONCLUIDO);
     const prazos = finalizadas
       .map((p) => {
-        const entrada = (p.historico || []).find((h) => h.status === "Finalizado");
+        const entrada = (p.historico || []).find((h) => h.status === STATUS_CONCLUIDO);
         if (!entrada) return null;
         return diasEntre(p.data, new Date(entrada.em).toISOString().slice(0, 10));
       })
@@ -1345,7 +1360,7 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
         <div style={grid}>
           <StatCard label="Produções realizadas" value={semana.length} onClick={() => setDetalhe({ titulo: "Produções da semana", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(semana) })} />
           <StatCard label="Faturamento previsto" value={fmtBRL(faturamentoPrevistoSemana)} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Faturamento previsto da semana", colunas: ["Marca", "Data", "Valor"], linhas: listaValores(semana) })} />
-          <StatCard label="Finalizadas" value={concluidasSemana} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Finalizadas na semana", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(semana.filter((p) => p.status === "Finalizado")) })} />
+          <StatCard label="Aprovadas" value={concluidasSemana} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Aprovadas na semana", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(semana.filter((p) => p.status === STATUS_CONCLUIDO)) })} />
         </div>
       </SecaoRecolhivel>
 
@@ -1413,7 +1428,7 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid #E4D9C4" }}>
-                  {["Pessoa", "Produções", "Finalizadas", "Tempo médio de entrega"].map((h) => (
+                  {["Pessoa", "Produções", "Aprovadas", "Tempo médio de entrega"].map((h) => (
                     <th key={h} className="font-mono" style={{ padding: "10px 12px", color: "#8A7F6E", fontWeight: 500, fontSize: 11, textTransform: "uppercase" }}>
                       {h}
                     </th>
@@ -1508,7 +1523,7 @@ function Quadro({ producoes, onStatusChange }) {
   const isoFimSemana = fimSemana.toISOString().slice(0, 10);
 
   const ordenadas = producoes
-    .filter((p) => p.data >= isoInicioSemana && p.data <= isoFimSemana && p.status !== "Finalizado")
+    .filter((p) => p.data >= isoInicioSemana && p.data <= isoFimSemana && p.status !== STATUS_CONCLUIDO)
     .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1));
 
   return (
@@ -1624,6 +1639,7 @@ function Quadro({ producoes, onStatusChange }) {
 function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, onDuplicar, onToggleTask, onStatusChange, precos, isAdmin, titulo }) {
   const [filtroStatus, setFiltroStatus] = useState("");
   const [filtroResponsavel, setFiltroResponsavel] = useState("");
+  const [filtroPeriodo, setFiltroPeriodo] = useState("semana");
   const [excluindo, setExcluindo] = useState(null);
 
   const responsaveis = Array.from(
@@ -1633,9 +1649,17 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
   ).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
   const hoje0 = hoje();
+  const inicioSemana = new Date();
+  inicioSemana.setDate(inicioSemana.getDate() - inicioSemana.getDay());
+  const isoInicioSemana = inicioSemana.toISOString().slice(0, 10);
+  const fimSemana = new Date(inicioSemana);
+  fimSemana.setDate(fimSemana.getDate() + 6);
+  const isoFimSemana = fimSemana.toISOString().slice(0, 10);
+
   const producoesExibidas = producoes.filter((p) => {
+    if (filtroPeriodo === "semana" && !(p.data >= isoInicioSemana && p.data <= isoFimSemana)) return false;
     if (filtroStatus === "Atrasadas") {
-      if (!(p.prazo < hoje0 && !["Entregue", "Finalizado"].includes(p.status))) return false;
+      if (!(p.prazo < hoje0 && !["Entregue ao cliente", "Aprovado"].includes(p.status))) return false;
     } else if (filtroStatus && p.status !== filtroStatus) {
       return false;
     }
@@ -1678,6 +1702,10 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
       </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+        <select value={filtroPeriodo} onChange={(e) => setFiltroPeriodo(e.target.value)} style={{ ...inputStyle, maxWidth: 160 }}>
+          <option value="semana">Esta semana</option>
+          <option value="todas">Todas as datas</option>
+        </select>
         <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} style={{ ...inputStyle, maxWidth: 200 }}>
           <option value="">Todos os status</option>
           <option value="Atrasadas">⚠ Atrasadas</option>
@@ -1689,8 +1717,8 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
             {responsaveis.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         )}
-        {(filtroStatus || filtroResponsavel) && (
-          <button onClick={() => { setFiltroStatus(""); setFiltroResponsavel(""); }} style={{ ...btnGhost, fontSize: 12.5 }}>
+        {(filtroStatus || filtroResponsavel || filtroPeriodo !== "semana") && (
+          <button onClick={() => { setFiltroStatus(""); setFiltroResponsavel(""); setFiltroPeriodo("semana"); }} style={{ ...btnGhost, fontSize: 12.5 }}>
             Limpar filtros
           </button>
         )}
@@ -1752,6 +1780,16 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
                     {p.tipo || "sem tipo definido"} · prazo {fmtData(p.prazo)}
                     {p.segmento && <> · segmento: {p.segmento}</>}
                   </div>
+
+                  {p.cenariosSlots && p.cenariosSlots.filter((s) => s.cenario).length > 1 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                      {p.cenariosSlots.filter((s) => s.cenario).map((s, i) => (
+                        <span key={i} className="font-mono" style={{ fontSize: 11, color: "#566B4F", background: "#E7EEE3", padding: "3px 9px", borderRadius: 999 }}>
+                          🏞️ {s.cenario}: {s.looks || 0} look(s)
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                   {isAdmin && (
                     <div style={{ marginBottom: 8 }}>
@@ -1952,10 +1990,17 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
 
   const mapaCenario = {};
   producoesReais.forEach((p) => {
-    const nome = (p.cenario || "").trim() || "Sem cenário definido";
-    if (!mapaCenario[nome]) mapaCenario[nome] = { cenario: nome, usos: 0, receita: 0 };
-    mapaCenario[nome].usos++;
-    mapaCenario[nome].receita += totalProducao(p, precos);
+    const totalP = totalProducao(p, precos);
+    const cslots = p.cenariosSlots && p.cenariosSlots.length ? p.cenariosSlots.filter((s) => s.cenario) : [{ cenario: p.cenario, looks: p.looks }];
+    if (cslots.length === 0) return;
+    const totalLooksSlots = cslots.reduce((s, c) => s + (Number(c.looks) || 0), 0);
+    cslots.forEach((slot) => {
+      const nome = (slot.cenario || "").trim() || "Sem cenário definido";
+      if (!mapaCenario[nome]) mapaCenario[nome] = { cenario: nome, usos: 0, receita: 0 };
+      mapaCenario[nome].usos++;
+      const parcela = totalLooksSlots > 0 ? (Number(slot.looks) || 0) / totalLooksSlots : 1 / cslots.length;
+      mapaCenario[nome].receita += totalP * parcela;
+    });
   });
   const dadosCenario = Object.values(mapaCenario).sort((a, b) => b.receita - a.receita);
 
@@ -2852,7 +2897,7 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
 }
 
 // ---------- Config ----------
-function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perfis, salvarPerfis, usuario, webhookSheets, salvarWebhookSheets, statusSync, sincronizando, clientesCadastro, salvarClientesCadastro, producoes, salvarProducoes, segmentosDisponiveis, salvarSegmentosDisponiveis, modelos, salvarModelos }) {
+function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perfis, salvarPerfis, usuario, webhookSheets, salvarWebhookSheets, statusSync, sincronizando, clientesCadastro, salvarClientesCadastro, producoes, salvarProducoes, segmentosDisponiveis, salvarSegmentosDisponiveis, modelos, salvarModelos, cenariosDisponiveis, salvarCenariosDisponiveis }) {
   const [local, setLocal] = useState(precos);
   const [tarefasTexto, setTarefasTexto] = useState(tarefasModelo.join("\n"));
   const [novoNome, setNovoNome] = useState("");
@@ -2863,6 +2908,7 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
   const [editandoCapacidadesId, setEditandoCapacidadesId] = useState(null);
   const [carregandoFotoPerfil, setCarregandoFotoPerfil] = useState(null);
   const [novoSegmento, setNovoSegmento] = useState("");
+  const [novoCenario, setNovoCenario] = useState("");
   const [removendoPerfil, setRemovendoPerfil] = useState(null);
   const [linkSheets, setLinkSheets] = useState(webhookSheets || "");
   const [importResultado, setImportResultado] = useState(null); // {novos, atualizados} | {erro}
@@ -3026,12 +3072,12 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
                 filmmaker: "",
                 editor: "",
                 storymaker: "",
-                status: "Finalizado",
+                status: STATUS_CONCLUIDO,
                 pagamentoStatus: "Pago",
                 valorPago: 0,
                 tasks: [],
                 createdAt: Date.now(),
-                historico: [{ status: "Finalizado", por: usuario?.nome || "Importação", em: Date.now(), criacao: true }],
+                historico: [{ status: STATUS_CONCLUIDO, por: usuario?.nome || "Importação", em: Date.now(), criacao: true }],
               });
             }
           }
@@ -3101,13 +3147,13 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
             filmmaker: "",
             editor: "",
             storymaker: "",
-            status: STATUS_PRODUCAO.includes(statusProd) ? statusProd : "Finalizado",
+            status: STATUS_PRODUCAO.includes(statusProd) ? statusProd : STATUS_CONCLUIDO,
             pagamentoStatus: STATUS_PAGAMENTO.includes(statusPagto) ? statusPagto : "Pago",
             valorFixo: valor,
             valorPago: 0,
             tasks: [],
             createdAt: Date.now(),
-            historico: [{ status: "Finalizado", por: usuario?.nome || "Importação", em: Date.now(), criacao: true }],
+            historico: [{ status: STATUS_CONCLUIDO, por: usuario?.nome || "Importação", em: Date.now(), criacao: true }],
           });
         });
 
@@ -3433,6 +3479,48 @@ function Config({ precos, salvarPrecos, tarefasModelo, salvarTarefasModelo, perf
               const v = novoSegmento.trim();
               if (v && !segmentosDisponiveis.includes(v)) salvarSegmentosDisponiveis([...segmentosDisponiveis, v]);
               setNovoSegmento("");
+            }}
+            style={{ ...btnPrimario, marginTop: 0, flexShrink: 0 }}
+          >
+            + Adicionar
+          </button>
+        </div>
+      </Card>
+
+      <SectionTitle title="Cenários do estúdio" />
+      <Card style={{ padding: 18, marginBottom: 24, maxWidth: 480 }}>
+        <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
+          Cenários disponíveis pra fotografar. Aparecem como opção ao agendar uma produção.
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          {cenariosDisponiveis.map((cen) => (
+            <span
+              key={cen}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px 5px 12px", borderRadius: 999, background: "#F8F3E8", fontSize: 12.5 }}
+            >
+              {cen}
+              <button
+                onClick={() => salvarCenariosDisponiveis(cenariosDisponiveis.filter((c) => c !== cen))}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#A83B2E", fontSize: 13, padding: "0 4px" }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {cenariosDisponiveis.length === 0 && <span style={{ fontSize: 12.5, color: "#8A7F6E" }}>Nenhum cenário cadastrado ainda.</span>}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            style={inputStyle}
+            placeholder="Novo cenário"
+            value={novoCenario}
+            onChange={(e) => setNovoCenario(e.target.value)}
+          />
+          <button
+            onClick={() => {
+              const v = novoCenario.trim();
+              if (v && !cenariosDisponiveis.includes(v)) salvarCenariosDisponiveis([...cenariosDisponiveis, v]);
+              setNovoCenario("");
             }}
             style={{ ...btnPrimario, marginTop: 0, flexShrink: 0 }}
           >
@@ -4139,7 +4227,7 @@ function CampoResponsavel({ capacidade, valor, onChange, perfis }) {
   );
 }
 
-function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, segmentosDisponiveis, perfis }) {
+function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, segmentosDisponiveis, cenariosDisponiveis, clientesCadastro, perfis }) {
   const p = producao;
   const set = (campo) => (e) => setProducao({ ...p, [campo]: e.target.value });
   const setNum = (campo) => (e) => setProducao({ ...p, [campo]: e.target.value === "" ? "" : Number(e.target.value) });
@@ -4167,6 +4255,24 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
   };
   const adicionarSlot = () => { if (slots.length < 5) atualizarSlots([...slots, { modeloId: "", modelo: "" }]); };
   const removerSlot = (i) => atualizarSlots(slots.filter((_, idx) => idx !== i));
+
+  const cenSlots = p.cenariosSlots && p.cenariosSlots.length ? p.cenariosSlots : [{ cenario: p.cenario || "", looks: p.looks || 0 }];
+  const atualizarCenSlots = (novos) => {
+    const nomes = novos.map((s) => s.cenario).filter(Boolean);
+    setProducao({ ...p, cenariosSlots: novos, cenario: nomes.join(", ") });
+  };
+  const mudarCenSlotNome = (i, valor) => {
+    const novos = [...cenSlots];
+    novos[i] = { ...novos[i], cenario: valor === "__outro__" ? "" : valor };
+    atualizarCenSlots(novos);
+  };
+  const mudarCenSlotLooks = (i, valor) => {
+    const novos = [...cenSlots];
+    novos[i] = { ...novos[i], looks: valor === "" ? "" : Number(valor) };
+    atualizarCenSlots(novos);
+  };
+  const adicionarCenSlot = () => { if (cenSlots.length < 5) atualizarCenSlots([...cenSlots, { cenario: "", looks: 0 }]); };
+  const removerCenSlot = (i) => atualizarCenSlots(cenSlots.filter((_, idx) => idx !== i));
 
   return (
     <div
@@ -4199,7 +4305,12 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
         </h3>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Field label="Cliente"><input style={inputStyle} value={p.cliente} onChange={set("cliente")} /></Field>
+          <Field label="Cliente">
+            <input style={inputStyle} value={p.cliente} onChange={set("cliente")} list="lista-clientes-producao" placeholder="digite pra buscar…" />
+            <datalist id="lista-clientes-producao">
+              {(clientesCadastro || []).map((c) => <option key={c.nome} value={c.nome} />)}
+            </datalist>
+          </Field>
           <div />
           <div style={{ gridColumn: "1 / -1" }}>
             <div className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 6 }}>
@@ -4289,7 +4400,59 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
               {segmentosDisponiveis.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </Field>
-          <Field label="Cenário"><input style={inputStyle} value={p.cenario} onChange={set("cenario")} /></Field>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 6 }}>
+              Cenário(s) — quantos looks em cada
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {cenSlots.map((slot, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                  <div style={{ flex: 2 }}>
+                    {cenariosDisponiveis && cenariosDisponiveis.length > 0 ? (
+                      <>
+                        <select
+                          style={inputStyle}
+                          value={cenariosDisponiveis.includes(slot.cenario) ? slot.cenario : "__outro__"}
+                          onChange={(e) => mudarCenSlotNome(i, e.target.value)}
+                        >
+                          <option value="">— nenhum —</option>
+                          {cenariosDisponiveis.map((c) => <option key={c} value={c}>{c}</option>)}
+                          <option value="__outro__">+ outro (digitar)</option>
+                        </select>
+                        {!cenariosDisponiveis.includes(slot.cenario) && (
+                          <input style={{ ...inputStyle, marginTop: 6 }} value={slot.cenario} onChange={(e) => mudarCenSlotNome(i, e.target.value)} placeholder="digitar cenário" />
+                        )}
+                      </>
+                    ) : (
+                      <input style={inputStyle} value={slot.cenario} onChange={(e) => mudarCenSlotNome(i, e.target.value)} placeholder="cadastre cenários em Ajustes" />
+                    )}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <input
+                      type="number"
+                      style={inputStyle}
+                      value={slot.looks}
+                      onChange={(e) => mudarCenSlotLooks(i, e.target.value)}
+                      placeholder="looks"
+                    />
+                  </div>
+                  {cenSlots.length > 1 && (
+                    <button type="button" onClick={() => removerCenSlot(i)} style={{ ...btnGhost, color: "#A83B2E", padding: "8px 10px" }}>×</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {cenSlots.length < 5 && (
+              <button type="button" onClick={adicionarCenSlot} style={{ ...btnGhost, marginTop: 8, fontSize: 12.5 }}>
+                + Adicionar outro cenário
+              </button>
+            )}
+            {cenSlots.length > 1 && (
+              <p style={{ fontSize: 11, color: "#8A7F6E", margin: "6px 0 0" }}>
+                Total nos cenários: <b>{cenSlots.reduce((s, c) => s + (Number(c.looks) || 0), 0)}</b> look(s)
+              </p>
+            )}
+          </div>
           <Field label="Localização do ensaio (endereço)"><input style={inputStyle} value={p.localizacao} onChange={set("localizacao")} placeholder="endereço ou nome do local" /></Field>
           <Field label="Link da pasta no Drive"><input style={inputStyle} value={p.linkDrive} onChange={set("linkDrive")} placeholder="https://drive.google.com/…" /></Field>
           <div style={{ gridColumn: "1 / -1", background: "#F8F3E8", borderRadius: 8, padding: "10px 12px" }}>
