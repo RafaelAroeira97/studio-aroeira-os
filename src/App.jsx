@@ -1209,6 +1209,8 @@ export default function StudioAroeiraOS() {
             despesasFixas={despesasFixas}
             salvarDespesasFixas={salvarDespesasFixas}
             modelos={modelos}
+            salvarProducoes={salvarProducoes}
+            cenariosDisponiveis={cenariosDisponiveis}
           />
         )}
         {isAdmin && tab === "crm" && (
@@ -1228,6 +1230,8 @@ export default function StudioAroeiraOS() {
             onNovo={novoModelo}
             onEditar={editarModelo}
             onExcluir={excluirModelo}
+            producoes={producoes}
+            salvarModelos={salvarModelos}
           />
         )}
         {isAdmin && tab === "config" && (
@@ -2356,7 +2360,7 @@ const CORES_PUBLICO = {
   "Não informado": "#8A7F6E",
 };
 
-function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, salvarHistoricoFinanceiro, despesasFixas, salvarDespesasFixas, modelos }) {
+function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, salvarHistoricoFinanceiro, despesasFixas, salvarDespesasFixas, modelos, salvarProducoes, cenariosDisponiveis }) {
   const clientesApenasMensal = new Set(clientesCadastro.filter((c) => c.clienteMensal || c.apenasMensal).map((c) => c.nome));
   const producoesFaturaveis = producoes.filter((p) => !clientesApenasMensal.has(p.cliente));
 
@@ -2439,6 +2443,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
   const dadosPorModelo = Object.values(mapaModelo).sort((a, b) => b.valorGerado - a.valorGerado);
 
   const [mostrarAberto, setMostrarAberto] = useState(false);
+  const [cenarioSelecionado, setCenarioSelecionado] = useState(null);
   const [mostrarRecorrente, setMostrarRecorrente] = useState(false);
   const [anoFinanceiro, setAnoFinanceiro] = useState(hoje().slice(0, 4));
 
@@ -2652,8 +2657,12 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
             </thead>
             <tbody>
               {dadosCenario.map((d) => (
-                <tr key={d.cenario} style={{ borderBottom: "1px solid #F0E8D6" }}>
-                  <td style={{ padding: "9px 12px" }}>{d.cenario}</td>
+                <tr
+                  key={d.cenario}
+                  onClick={() => setCenarioSelecionado(d.cenario)}
+                  style={{ borderBottom: "1px solid #F0E8D6", cursor: "pointer" }}
+                >
+                  <td style={{ padding: "9px 12px", color: "#7A2E22", textDecoration: "underline" }}>{d.cenario}</td>
                   <td style={{ padding: "9px 12px" }}>{d.usos}</td>
                   <td style={{ padding: "9px 12px", fontWeight: 600 }}>{fmtBRL(d.receita)}</td>
                 </tr>
@@ -2661,6 +2670,54 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
             </tbody>
           </table>
         </Card>
+      )}
+
+      {cenarioSelecionado && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setCenarioSelecionado(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 520, width: "100%", maxHeight: "82vh", overflowY: "auto" }}>
+            <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0, marginBottom: 4 }}>{cenarioSelecionado}</h3>
+            <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0, marginBottom: 14 }}>
+              Escolha o cenário certo em cada produção — a mudança já salva na hora.
+            </p>
+            <div style={{ display: "grid", gap: 8 }}>
+              {producoesReais
+                .filter((p) => {
+                  const slots = p.cenariosSlots && p.cenariosSlots.length ? p.cenariosSlots : [{ cenario: p.cenario || "" }];
+                  return slots.some((s) => ((s.cenario || "").trim() || "Sem cenário definido") === cenarioSelecionado);
+                })
+                .sort((a, b) => (a.data < b.data ? 1 : -1))
+                .map((p) => (
+                  <Card key={p.id} style={{ padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{p.cliente}</div>
+                      <div style={{ fontSize: 11.5, color: "#8A7F6E" }}>{fmtData(p.data)}</div>
+                    </div>
+                    <select
+                      style={{ ...inputStyle, maxWidth: 200 }}
+                      value={cenariosDisponiveis.includes(p.cenario) ? p.cenario : "__outro__"}
+                      onChange={(e) => {
+                        const novoCen = e.target.value === "__outro__" ? "" : e.target.value;
+                        salvarProducoes(
+                          producoes.map((pp) =>
+                            pp.id === p.id
+                              ? { ...pp, cenario: novoCen, cenariosSlots: [{ cenario: novoCen, looks: pp.looks || 0 }] }
+                              : pp
+                          )
+                        );
+                      }}
+                    >
+                      <option value="">— nenhum —</option>
+                      {(cenariosDisponiveis || []).map((c) => <option key={c} value={c}>{c}</option>)}
+                      <option value="__outro__">+ outro (digitar na produção)</option>
+                    </select>
+                  </Card>
+                ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setCenarioSelecionado(null)} style={btnGhost}>Fechar</button>
+            </div>
+          </div>
+        </div>
       )}
 
       <SectionTitle title="Faturamento por segmento" />
@@ -2842,6 +2899,7 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
   const [buscaCliente, setBuscaCliente] = useState("");
   const [filtroSegmento, setFiltroSegmento] = useState("");
   const [unificarAberto, setUnificarAberto] = useState(false);
+  const [excluindoCliente, setExcluindoCliente] = useState(null);
   const [selecionadosUnificar, setSelecionadosUnificar] = useState([]);
   const [principalUnificar, setPrincipalUnificar] = useState("");
   const [confirmandoUnificar, setConfirmandoUnificar] = useState(false);
@@ -2895,6 +2953,12 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
   };
 
   const clienteDetalhe = clientes.find((c) => c.nome === detalheNome);
+
+  const excluirCliente = (nome) => {
+    salvarClientesCadastro(clientesCadastro.filter((c) => c.nome !== nome));
+    setExcluindoCliente(null);
+    setDetalheNome(null);
+  };
 
   // ---- unificar clientes ----
   const todosOsNomes = Array.from(
@@ -3027,6 +3091,15 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
           onCancelar={() => setConfirmandoUnificar(false)}
           onConfirmar={executarUnificacao}
           textoConfirmar="Sim, unificar"
+        />
+      )}
+
+      {excluindoCliente && (
+        <ConfirmarExclusao
+          titulo="Excluir cliente?"
+          mensagem={`Isso remove "${excluindoCliente.nome}" do cadastro (contato, segmentos, mensalidades). As produções já feitas continuam no histórico, só sem os dados de contato vinculados.`}
+          onCancelar={() => setExcluindoCliente(null)}
+          onConfirmar={() => excluirCliente(excluindoCliente.nome)}
         />
       )}
 
@@ -3230,7 +3303,10 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
                   )}
                 </div>
               </div>
-              <button onClick={() => abrirEditarContato(clienteDetalhe)} style={btnGhost}>Editar contato</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => abrirEditarContato(clienteDetalhe)} style={btnGhost}>Editar contato</button>
+                <button onClick={() => setExcluindoCliente(clienteDetalhe)} style={{ ...btnGhost, color: "#A83B2E" }}>Excluir cliente</button>
+              </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))", gap: 10, margin: "18px 0" }}>
@@ -5010,10 +5086,50 @@ function CartaoModelo({ modelo, onEditar, onExcluir }) {
   );
 }
 
-function Modelos({ modelos, onNovo, onEditar, onExcluir }) {
+function Modelos({ modelos, onNovo, onEditar, onExcluir, producoes, salvarModelos }) {
   const [excluindo, setExcluindo] = useState(null);
   const [abertos, setAbertos] = useState({});
   const [copiado, setCopiado] = useState(false);
+  const [faltandoAberto, setFaltandoAberto] = useState(false);
+  const [categoriasEscolhidas, setCategoriasEscolhidas] = useState({});
+
+  const normalizarTexto = (s) => (s || "").toString().trim().toLowerCase();
+  const nomesJaModelos = new Set(modelos.map((m) => normalizarTexto(m.nome)));
+  const nomesFaltando = Array.from(
+    new Set(
+      producoes
+        .flatMap((p) => (p.modelosSlots && p.modelosSlots.length ? p.modelosSlots.map((s) => s.modelo) : [p.modelo]))
+        .filter(Boolean)
+        .filter((nome) => !nomesJaModelos.has(normalizarTexto(nome)))
+    )
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+  const cadastrarFaltando = () => {
+    const novos = nomesFaltando.map((nome) => ({
+      id: uid(),
+      nome,
+      categoria: categoriasEscolhidas[nome] || "Feminino",
+      plusSize: false,
+      altura: "",
+      tamanho: "",
+      numeracao: "",
+      sapato: "",
+      valorPorLook: 0,
+      valorAtualizadoEm: null,
+      infoEspecial: "",
+      foto: "",
+      fotoPosicaoY: 50,
+      fotosExtras: [],
+      whatsapp: "",
+      instagram: "",
+      linkDrive: "",
+      responsavelNome: "",
+      responsavelParentesco: "",
+    }));
+    salvarModelos([...modelos, ...novos]);
+    setCategoriasEscolhidas({});
+    setFaltandoAberto(false);
+  };
 
   const linkCatalogo =
     typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}?catalogo=1` : "";
@@ -5040,6 +5156,43 @@ function Modelos({ modelos, onNovo, onEditar, onExcluir }) {
           </a>
         </div>
       </Card>
+
+      {nomesFaltando.length > 0 && (
+        <Card style={{ padding: 16, marginBottom: 18 }}>
+          <button
+            onClick={() => setFaltandoAberto(!faltandoAberto)}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", padding: 0, color: "#B9862E", fontSize: 13.5, fontWeight: 600 }}
+          >
+            ⚠️ {nomesFaltando.length} modelo(s) aparecem em produções mas não têm cadastro
+            <span style={{ fontSize: 11, transform: faltandoAberto ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▾</span>
+          </button>
+          {faltandoAberto && (
+            <div style={{ marginTop: 12 }}>
+              <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
+                Escolha a categoria de cada uma e cadastre todas de uma vez — depois é só completar foto, medidas e valor por look em cada uma.
+              </p>
+              <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
+                {nomesFaltando.map((nome) => (
+                  <div key={nome} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "6px 10px", background: "#F8F3E8", borderRadius: 8 }}>
+                    <span style={{ fontSize: 13.5 }}>{nome}</span>
+                    <select
+                      style={{ ...inputStyle, maxWidth: 140 }}
+                      value={categoriasEscolhidas[nome] || "Feminino"}
+                      onChange={(e) => setCategoriasEscolhidas({ ...categoriasEscolhidas, [nome]: e.target.value })}
+                    >
+                      {PUBLICO_OPCOES.map((c) => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <button onClick={cadastrarFaltando} style={btnPrimario}>
+                Cadastrar {nomesFaltando.length} modelo(s)
+              </button>
+            </div>
+          )}
+        </Card>
+      )}
+
       {PUBLICO_OPCOES.map((categoria) => {
         const doGrupo = modelos.filter((m) => m.categoria === categoria).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
         const aberto = !!abertos[categoria];
