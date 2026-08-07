@@ -224,6 +224,7 @@ const inputStyle = {
 export function CatalogoModelos() {
   const [modelos, setModelos] = useState([]);
   const [carregando, setCarregando] = useState(true);
+  const [selecionadoId, setSelecionadoId] = useState(() => new URLSearchParams(window.location.search).get("modelo") || null);
 
   useEffect(() => {
     (async () => {
@@ -234,6 +235,16 @@ export function CatalogoModelos() {
       setCarregando(false);
     })();
   }, []);
+
+  const selecionarModelo = (id) => {
+    setSelecionadoId(id);
+    const params = new URLSearchParams(window.location.search);
+    if (id) params.set("modelo", id);
+    else params.delete("modelo");
+    window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
+  };
+
+  const modeloSelecionado = modelos.find((m) => m.id === selecionadoId);
 
   return (
     <div className="font-body" style={{ minHeight: "100vh", background: "#F1ECE1", padding: "28px 16px 60px" }}>
@@ -248,6 +259,73 @@ export function CatalogoModelos() {
 
         {carregando ? (
           <p style={{ textAlign: "center", color: "#8A7F6E" }}>Carregando…</p>
+        ) : modeloSelecionado ? (
+          <div>
+            <button
+              onClick={() => selecionarModelo(null)}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#7A2E22", fontSize: 13.5, fontWeight: 600, marginBottom: 16, padding: 0 }}
+            >
+              ← Voltar pro catálogo
+            </button>
+
+            {modeloSelecionado.foto ? (
+              <img
+                src={modeloSelecionado.foto}
+                alt={modeloSelecionado.nome}
+                style={{ width: "100%", maxHeight: 420, objectFit: "cover", objectPosition: `center ${modeloSelecionado.fotoPosicaoY ?? 50}%`, borderRadius: 16, border: "1px solid #E4D9C4" }}
+              />
+            ) : (
+              <div style={{ width: "100%", height: 280, background: "#F2E7DA", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 60, color: "#B0A388", borderRadius: 16 }}>
+                👤
+              </div>
+            )}
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
+              <h1 className="font-display" style={{ fontSize: 26, fontWeight: 600, margin: 0 }}>{modeloSelecionado.nome}</h1>
+              {modeloSelecionado.plusSize && (
+                <span className="font-mono" style={{ fontSize: 10, color: "#99475A", background: "#F5E3E8", padding: "2px 8px", borderRadius: 999, fontWeight: 700 }}>
+                  PLUS SIZE
+                </span>
+              )}
+            </div>
+
+            <div className="font-mono" style={{ fontSize: 13, color: "#8A7F6E", marginTop: 6 }}>
+              {[modeloSelecionado.altura, modeloSelecionado.tamanho, modeloSelecionado.numeracao && `manequim ${modeloSelecionado.numeracao}`, modeloSelecionado.sapato && `calçado ${modeloSelecionado.sapato}`]
+                .filter(Boolean)
+                .join(" · ")}
+            </div>
+
+            <div style={{ fontSize: 18, color: "#7A2E22", fontWeight: 600, marginTop: 10 }}>
+              {fmtBRL(modeloSelecionado.valorPorLook)} <span style={{ fontWeight: 400, fontSize: 14, color: "#6B6153" }}>/ look</span>
+              {modeloSelecionado.valorAtualizadoEm && (
+                <span className="font-mono" style={{ fontSize: 11, color: "#B0A388", fontWeight: 400, marginLeft: 10 }}>
+                  atualizado em {fmtMesAno(modeloSelecionado.valorAtualizadoEm)}
+                </span>
+              )}
+            </div>
+
+            {modeloSelecionado.instagram && (
+              <a
+                href={`https://instagram.com/${modeloSelecionado.instagram.replace("@", "")}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 14, fontSize: 14, color: "#7A2E22", textDecoration: "none", background: "#F2E7DA", padding: "8px 16px", borderRadius: 999 }}
+              >
+                📷 Ver no Instagram
+              </a>
+            )}
+
+            {(modeloSelecionado.fotosExtras || []).length > 0 && (
+              <div style={{ marginTop: 26 }}>
+                <h3 className="font-display" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Mais fotos</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
+                  {modeloSelecionado.fotosExtras.map((foto, i) => (
+                    <img key={i} src={foto} alt="" style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 10, border: "1px solid #E4D9C4" }} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           PUBLICO_OPCOES.map((categoria) => {
             const doGrupo = modelos.filter((m) => m.categoria === categoria).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
@@ -259,7 +337,11 @@ export function CatalogoModelos() {
                 </h2>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 16 }}>
                   {doGrupo.map((m) => (
-                    <div key={m.id} style={{ background: "#FFFDF9", border: "1px solid #E4D9C4", borderRadius: 14, overflow: "hidden" }}>
+                    <div
+                      key={m.id}
+                      onClick={() => selecionarModelo(m.id)}
+                      style={{ background: "#FFFDF9", border: "1px solid #E4D9C4", borderRadius: 14, overflow: "hidden", cursor: "pointer" }}
+                    >
                       {m.foto ? (
                         <img
                           src={m.foto}
@@ -300,7 +382,7 @@ export function CatalogoModelos() {
           })
         )}
 
-        {!carregando && modelos.length === 0 && (
+        {!carregando && !modeloSelecionado && modelos.length === 0 && (
           <p style={{ textAlign: "center", color: "#8A7F6E" }}>Nenhum modelo disponível no momento.</p>
         )}
 
@@ -558,6 +640,7 @@ export default function StudioAroeiraOS() {
       infoEspecial: "",
       foto: "",
       fotoPosicaoY: 50,
+      fotosExtras: [],
       whatsapp: "",
       instagram: "",
       linkDrive: "",
@@ -655,6 +738,7 @@ export default function StudioAroeiraOS() {
       temVideo: false,
       storymaker: "",
       status: "Agendado",
+      statusVideo: "Agendado",
       pagamentoStatus: "Em aberto",
       valorPago: 0,
       repetir: false,
@@ -670,6 +754,7 @@ export default function StudioAroeiraOS() {
       id: null,
       data: hoje(),
       status: "Agendado",
+      statusVideo: "Agendado",
       pagamentoStatus: "Em aberto",
       valorPago: 0,
       linkDrive: "",
@@ -743,6 +828,12 @@ export default function StudioAroeiraOS() {
         const registro = { status: novoStatus, por: usuario?.nome || "desconhecido", em: Date.now() };
         return { ...p, status: novoStatus, historico: [...(p.historico || []), registro] };
       })
+    );
+  };
+
+  const mudarStatusVideo = (producaoId, novoStatus) => {
+    salvarProducoes(
+      producoes.map((p) => (p.id === producaoId ? { ...p, statusVideo: novoStatus } : p))
     );
   };
 
@@ -1033,7 +1124,7 @@ export default function StudioAroeiraOS() {
 
       <main style={{ flex: 1, padding: "18px 16px calc(env(safe-area-inset-bottom, 0px) + 96px)", maxWidth: 1180, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
         {isAdmin && tab === "dashboard" && <Dashboard producoes={producoes} precos={precos} clientes={clientes} historicoFinanceiro={historicoFinanceiro} />}
-        {tab === "quadro" && <Quadro producoes={isAdmin ? producoes : minhasProducoes} onStatusChange={mudarStatus} />}
+        {tab === "quadro" && <Quadro producoes={isAdmin ? producoes : minhasProducoes} onStatusChange={mudarStatus} onStatusVideoChange={mudarStatusVideo} />}
         {!isAdmin && tab === "painel" && <PainelEquipe producoes={minhasProducoes} usuario={usuario} onAvisarProblema={sinalizarProblema} />}
         {tab === "producoes" && (
           <Producoes
@@ -1045,6 +1136,7 @@ export default function StudioAroeiraOS() {
             onExcluir={excluirProducao}
             onDuplicar={duplicarProducao}
             onStatusChange={mudarStatus}
+            onStatusVideoChange={mudarStatusVideo}
             onAvisarProblema={sinalizarProblema}
             precos={precos}
             isAdmin={isAdmin}
@@ -1661,7 +1753,7 @@ function SectionTitle({ title }) {
 }
 
 // ---------- Quadro ----------
-function Quadro({ producoes, onStatusChange }) {
+function Quadro({ producoes, onStatusChange, onStatusVideoChange }) {
   const [aberto, setAberto] = useState(null);
 
   const inicioSemana = new Date();
@@ -1671,8 +1763,10 @@ function Quadro({ producoes, onStatusChange }) {
   fimSemana.setDate(fimSemana.getDate() + 6);
   const isoFimSemana = fimSemana.toISOString().slice(0, 10);
 
+  const concluidaDeVerdade = (p) => p.status === STATUS_CONCLUIDO && (!p.temVideo || p.statusVideo === STATUS_CONCLUIDO);
+
   const ordenadas = producoes
-    .filter((p) => p.data >= isoInicioSemana && p.data <= isoFimSemana && p.status !== STATUS_CONCLUIDO)
+    .filter((p) => p.data >= isoInicioSemana && p.data <= isoFimSemana && !concluidaDeVerdade(p))
     .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1));
 
   return (
@@ -1682,13 +1776,14 @@ function Quadro({ producoes, onStatusChange }) {
         {ordenadas.map((p) => {
           const expandido = aberto === p.id;
           const cor = STATUS_COR[p.status] || "#8A7F6E";
+          const corVideo = STATUS_COR[p.statusVideo] || "#8A7F6E";
           const historico = p.historico || [];
           const ultimaAlteracao = historico[historico.length - 1];
           return (
             <Card key={p.id} style={{ padding: 14 }}>
               <div
                 onClick={() => setAberto(expandido ? null : p.id)}
-                style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}
+                style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", flexWrap: "wrap" }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="font-display" style={{ fontSize: 16.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -1705,6 +1800,7 @@ function Quadro({ producoes, onStatusChange }) {
                 </div>
                 <span
                   className="font-mono"
+                  title="Status das fotos"
                   style={{
                     fontSize: 11,
                     letterSpacing: "0.03em",
@@ -1717,48 +1813,88 @@ function Quadro({ producoes, onStatusChange }) {
                     flexShrink: 0,
                   }}
                 >
-                  {p.status}
+                  📷 {p.status}
                 </span>
+                {p.temVideo && (
+                  <span
+                    className="font-mono"
+                    title="Status do vídeo"
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: "0.03em",
+                      textTransform: "uppercase",
+                      padding: "5px 10px",
+                      borderRadius: 999,
+                      border: "1px solid " + corVideo,
+                      color: corVideo,
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    🎬 {p.statusVideo || "Agendado"}
+                  </span>
+                )}
                 <span style={{ color: "#B0A388", fontSize: 12, transform: expandido ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▾</span>
               </div>
 
               {expandido && (
-                <div style={{ display: "grid", gap: 5, marginTop: 12, paddingTop: 12, borderTop: "1px solid #EFE6D4" }}>
-                  {STATUS_PRODUCAO.map((status) => {
-                    const ativo = p.status === status;
-                    const corOpcao = STATUS_COR[status] || "#8A7F6E";
-                    return (
-                      <button
-                        key={status}
-                        onClick={() => {
-                          onStatusChange(p.id, status);
-                          setAberto(null);
-                        }}
-                        className="font-body"
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          textAlign: "left",
-                          padding: "7px 10px",
-                          borderRadius: 8,
-                          border: "1px solid " + (ativo ? corOpcao : "#E4D9C4"),
-                          background: ativo ? corOpcao : "transparent",
-                          color: ativo ? "#FBF4E9" : "#6B6153",
-                          fontSize: 12.5,
-                          fontWeight: ativo ? 700 : 500,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <span style={{ width: 7, height: 7, borderRadius: 999, background: ativo ? "#FBF4E9" : corOpcao, flexShrink: 0 }} />
-                        {status}
-                      </button>
-                    );
-                  })}
+                <div style={{ display: "grid", gap: 12, marginTop: 12, paddingTop: 12, borderTop: "1px solid #EFE6D4" }}>
+                  <div>
+                    <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 6 }}>📷 Fotos</div>
+                    <div style={{ display: "grid", gap: 5 }}>
+                      {STATUS_PRODUCAO.map((status) => {
+                        const ativo = p.status === status;
+                        const corOpcao = STATUS_COR[status] || "#8A7F6E";
+                        return (
+                          <button
+                            key={status}
+                            onClick={() => { onStatusChange(p.id, status); setAberto(null); }}
+                            className="font-body"
+                            style={{
+                              display: "flex", alignItems: "center", gap: 8, textAlign: "left", padding: "7px 10px", borderRadius: 8,
+                              border: "1px solid " + (ativo ? corOpcao : "#E4D9C4"), background: ativo ? corOpcao : "transparent",
+                              color: ativo ? "#FBF4E9" : "#6B6153", fontSize: 12.5, fontWeight: ativo ? 700 : 500, cursor: "pointer",
+                            }}
+                          >
+                            <span style={{ width: 7, height: 7, borderRadius: 999, background: ativo ? "#FBF4E9" : corOpcao, flexShrink: 0 }} />
+                            {status}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {p.temVideo && (
+                    <div>
+                      <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 6 }}>🎬 Vídeo</div>
+                      <div style={{ display: "grid", gap: 5 }}>
+                        {STATUS_PRODUCAO.map((status) => {
+                          const ativo = (p.statusVideo || "Agendado") === status;
+                          const corOpcao = STATUS_COR[status] || "#8A7F6E";
+                          return (
+                            <button
+                              key={status}
+                              onClick={() => { onStatusVideoChange(p.id, status); setAberto(null); }}
+                              className="font-body"
+                              style={{
+                                display: "flex", alignItems: "center", gap: 8, textAlign: "left", padding: "7px 10px", borderRadius: 8,
+                                border: "1px solid " + (ativo ? corOpcao : "#E4D9C4"), background: ativo ? corOpcao : "transparent",
+                                color: ativo ? "#FBF4E9" : "#6B6153", fontSize: 12.5, fontWeight: ativo ? 700 : 500, cursor: "pointer",
+                              }}
+                            >
+                              <span style={{ width: 7, height: 7, borderRadius: 999, background: ativo ? "#FBF4E9" : corOpcao, flexShrink: 0 }} />
+                              {status}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {historico.length > 0 && (
-                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #EFE6D4" }}>
+                    <div style={{ paddingTop: 6, borderTop: "1px solid #EFE6D4" }}>
                       <div className="font-mono" style={{ fontSize: 10, color: "#B0A388", textTransform: "uppercase", marginBottom: 4 }}>
-                        Histórico
+                        Histórico (fotos)
                       </div>
                       <div style={{ display: "grid", gap: 3 }}>
                         {[...historico].reverse().slice(0, 4).map((h, i) => (
@@ -1785,7 +1921,7 @@ function Quadro({ producoes, onStatusChange }) {
 }
 
 // ---------- Produções ----------
-function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, onDuplicar, onStatusChange, onAvisarProblema, precos, isAdmin, titulo }) {
+function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, onDuplicar, onStatusChange, onStatusVideoChange, onAvisarProblema, precos, isAdmin, titulo }) {
   const [filtroStatus, setFiltroStatus] = useState("");
   const [filtroResponsavel, setFiltroResponsavel] = useState("");
   const [filtroPeriodo, setFiltroPeriodo] = useState("semana");
@@ -1902,7 +2038,8 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
                     {p.localizacao && <> · 📍 {p.localizacao}</>}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }} onClick={(e) => e.stopPropagation()}>
+                  <span title="Status das fotos" style={{ fontSize: 12 }}>📷</span>
                   <select
                     value={p.status}
                     onChange={(e) => onStatusChange(p.id, e.target.value)}
@@ -1920,6 +2057,28 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
                   >
                     {STATUS_PRODUCAO.map((s) => <option key={s}>{s}</option>)}
                   </select>
+                  {p.temVideo && (
+                    <>
+                      <span title="Status do vídeo" style={{ fontSize: 12 }}>🎬</span>
+                      <select
+                        value={p.statusVideo || "Agendado"}
+                        onChange={(e) => onStatusVideoChange(p.id, e.target.value)}
+                        className="font-mono"
+                        style={{
+                          fontSize: 11,
+                          letterSpacing: "0.04em",
+                          textTransform: "uppercase",
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          border: "1px solid " + (STATUS_COR[p.statusVideo] || "#8A7F6E"),
+                          color: STATUS_COR[p.statusVideo] || "#8A7F6E",
+                          background: "transparent",
+                        }}
+                      >
+                        {STATUS_PRODUCAO.map((s) => <option key={s}>{s}</option>)}
+                      </select>
+                    </>
+                  )}
                   <span style={{ color: "#B0A388", fontSize: 12, transform: expandido ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▾</span>
                 </div>
               </div>
@@ -3160,7 +3319,10 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
   const [importResultado, setImportResultado] = useState(null); // {novos, atualizados} | {erro}
   const [importando, setImportando] = useState(false);
   const [importProducoesResultado, setImportProducoesResultado] = useState(null);
+  const [resultadoPreencherSegmento, setResultadoPreencherSegmento] = useState(null);
   const [importandoProducoes, setImportandoProducoes] = useState(false);
+  const [importMensalidadesResultado, setImportMensalidadesResultado] = useState(null);
+  const [importandoMensalidades, setImportandoMensalidades] = useState(false);
   const [backupPendente, setBackupPendente] = useState(null);
   const [restaurando, setRestaurando] = useState(false);
 
@@ -3367,8 +3529,16 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
           }
           chavesExistentes.add(chave);
 
+          const diaSeguinte = (() => {
+            const d = new Date(`${dataTxt}T00:00:00`);
+            d.setDate(d.getDate() + 1);
+            const pad = (n) => String(n).padStart(2, "0");
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+          })();
+
           const statusPagto = acharColuna(linha, ["status pagamento", "pagamento"]).toString().trim();
           const statusProd = acharColuna(linha, ["status produção", "status"]).toString().trim();
+          const qtdVideos = Number(acharColuna(linha, ["vídeos", "videos", "video"])) || 0;
 
           novasProducoes.push({
             id: uid(),
@@ -3377,21 +3547,24 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
             modeloId: "",
             data: dataTxt,
             horario: "09:00",
-            tipo: acharColuna(linha, ["tipo"]).toString().trim() || "Histórico (importado)",
+            tipo: qtdVideos > 0 ? "Foto e vídeo" : "Foto",
+            temVideo: qtdVideos > 0,
             looks: Number(acharColuna(linha, ["looks", "look"])) || 0,
             lookbooks: Number(acharColuna(linha, ["criativos de vídeo", "criativos"])) || 0,
-            videos: Number(acharColuna(linha, ["vídeos", "videos", "video"])) || 0,
+            videos: qtdVideos,
             cenario: acharColuna(linha, ["cenário", "cenario"]).toString().trim(),
             localizacao: "",
             linkDrive: "",
-            observacoes: "Importado de planilha de faturamento histórico.",
+            observacoes: `Importado de planilha de faturamento histórico.${acharColuna(linha, ["tipo"]) ? ` Tipo original: ${acharColuna(linha, ["tipo"])}.` : ""}`,
             referencias: "",
-            prazo: dataTxt,
+            prazo: diaSeguinte,
             fotografo: "",
             filmmaker: "",
             editor: "",
+            editorVideo: "",
             storymaker: "",
             status: STATUS_PRODUCAO.includes(statusProd) ? statusProd : STATUS_CONCLUIDO,
+            statusVideo: qtdVideos > 0 ? STATUS_CONCLUIDO : "Agendado",
             pagamentoStatus: STATUS_PAGAMENTO.includes(statusPagto) ? statusPagto : "Pago",
             valorFixo: valor,
             valorPago: 0,
@@ -3408,6 +3581,73 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
       error: () => {
         setImportProducoesResultado({ erro: true });
         setImportandoProducoes(false);
+      },
+    });
+  };
+
+  const preencherSegmentosPorCliente = () => {
+    const mapaSegmento = {};
+    clientesCadastro.forEach((c) => {
+      if (c.segmentos && c.segmentos.length) mapaSegmento[normalizar(c.nome)] = c.segmentos[0];
+    });
+    let atualizadas = 0;
+    const novasProducoes = producoes.map((p) => {
+      if (p.segmento) return p;
+      const seg = mapaSegmento[normalizar(p.cliente)];
+      if (!seg) return p;
+      atualizadas++;
+      return { ...p, segmento: seg };
+    });
+    if (atualizadas > 0) salvarProducoes(novasProducoes);
+    setResultadoPreencherSegmento({ atualizadas });
+  };
+
+  const importarMensalidadesCSV = (arquivo) => {
+    setImportMensalidadesResultado(null);
+    setImportandoMensalidades(true);
+    Papa.parse(arquivo, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (res) => {
+        const linhas = res.data;
+        const mapaClientes = {};
+        clientesCadastro.forEach((c) => (mapaClientes[normalizar(c.nome)] = { ...c, mensalidades: [...(c.mensalidades || [])] }));
+        let lancamentos = 0;
+        let ignoradas = 0;
+        let clientesNovos = 0;
+
+        linhas.forEach((linha) => {
+          const cliente = acharColuna(linha, ["cliente", "marca", "nome"]).toString().trim();
+          const mes = acharColuna(linha, ["mês", "mes"]).toString().trim();
+          if (!cliente || !/^\d{4}-\d{2}$/.test(mes)) {
+            ignoradas++;
+            return;
+          }
+          const valorTxt = acharColuna(linha, ["valor"]).toString().trim().replace(",", ".");
+          const valor = valorTxt !== "" && !isNaN(Number(valorTxt)) ? Number(valorTxt) : 0;
+          const pagoTxt = acharColuna(linha, ["pago"]).toString().trim().toLowerCase();
+          const pago = ["sim", "true", "pago", "1", "yes"].includes(pagoTxt);
+
+          const chave = normalizar(cliente);
+          if (!mapaClientes[chave]) {
+            mapaClientes[chave] = { nome: cliente, telefone: "", email: "", instagram: "", linkDrive: "", segmentos: [], publico: [], clienteMensal: true, mensalidades: [], observacoes: "" };
+            clientesNovos++;
+          }
+          const cli = mapaClientes[chave];
+          cli.clienteMensal = true;
+          if (!cli.mensalidades.some((m) => m.mes === mes)) {
+            cli.mensalidades.push({ mes, valor, pago });
+            lancamentos++;
+          }
+        });
+
+        salvarClientesCadastro(Object.values(mapaClientes));
+        setImportMensalidadesResultado({ lancamentos, clientesNovos, ignoradas });
+        setImportandoMensalidades(false);
+      },
+      error: () => {
+        setImportMensalidadesResultado({ erro: true });
+        setImportandoMensalidades(false);
       },
     });
   };
@@ -3891,6 +4131,47 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
             {importProducoesResultado.erro
               ? "Não consegui ler esse arquivo. Confira se é mesmo um CSV."
               : `Importação concluída: ${importProducoesResultado.criadas} produção(ões) criada(s)${importProducoesResultado.ignoradas ? `, ${importProducoesResultado.ignoradas} linha(s) ignorada(s) (sem cliente/data válida ou já existente)` : ""}.`}
+          </p>
+        )}
+      </Card>
+
+      <SectionTitle title="Preencher segmento pelas produções sem segmento" />
+      <Card style={{ padding: 18, marginBottom: 24, maxWidth: 480 }}>
+        <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
+          Pra produções que ficaram sem segmento (por exemplo, vindas de uma importação histórica), isso preenche
+          automaticamente usando o segmento já cadastrado no perfil de cada cliente — só funciona pra clientes que já
+          têm segmento marcado no CRM.
+        </p>
+        <button onClick={preencherSegmentosPorCliente} style={btnPrimario}>Preencher segmentos agora</button>
+        {resultadoPreencherSegmento && (
+          <p style={{ fontSize: 12.5, marginTop: 10, color: "#566B4F" }}>
+            {resultadoPreencherSegmento.atualizadas > 0
+              ? `${resultadoPreencherSegmento.atualizadas} produção(ões) atualizada(s).`
+              : "Nenhuma produção pôde ser atualizada — confira se os clientes já têm segmento cadastrado no CRM."}
+          </p>
+        )}
+      </Card>
+
+      <SectionTitle title="Importar mensalidades de clientes fixos" />
+      <Card style={{ padding: 18, marginBottom: 24, maxWidth: 480 }}>
+        <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
+          Pra clientes que pagam valor fixo por mês. Colunas reconhecidas: <b>Cliente, Mês</b> (formato AAAA-MM), <b>Valor</b>, Pago (sim/não). Cria o cliente automaticamente se ainda não existir, marcando como "cliente mensal".
+        </p>
+        <input
+          type="file"
+          accept=".csv"
+          disabled={importandoMensalidades}
+          onChange={(e) => e.target.files[0] && importarMensalidadesCSV(e.target.files[0])}
+          style={{ fontSize: 13, opacity: importandoMensalidades ? 0.5 : 1 }}
+        />
+        {importandoMensalidades && (
+          <p style={{ fontSize: 12.5, marginTop: 10, color: "#B9862E" }}>⏳ Importando mensalidades…</p>
+        )}
+        {importMensalidadesResultado && !importandoMensalidades && (
+          <p style={{ fontSize: 12.5, marginTop: 10, color: importMensalidadesResultado.erro ? "#A83B2E" : "#566B4F" }}>
+            {importMensalidadesResultado.erro
+              ? "Não consegui ler esse arquivo. Confira se é mesmo um CSV."
+              : `Importação concluída: ${importMensalidadesResultado.lancamentos} mensalidade(s) lançada(s), ${importMensalidadesResultado.clientesNovos} cliente(s) novo(s)${importMensalidadesResultado.ignoradas ? `, ${importMensalidadesResultado.ignoradas} linha(s) ignorada(s)` : ""}.`}
           </p>
         )}
       </Card>
@@ -4402,6 +4683,7 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
   const m = modelo;
   const set = (campo) => (e) => setModelo({ ...m, [campo]: e.target.value });
   const [carregandoFoto, setCarregandoFoto] = useState(false);
+  const [carregandoExtra, setCarregandoExtra] = useState(false);
 
   const onFoto = async (arquivo) => {
     if (!arquivo) return;
@@ -4411,6 +4693,20 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
       setModelo({ ...m, foto: dataUrl, fotoPosicaoY: 50 });
     } catch (e) {}
     setCarregandoFoto(false);
+  };
+
+  const onFotoExtra = async (arquivo) => {
+    if (!arquivo) return;
+    setCarregandoExtra(true);
+    try {
+      const dataUrl = await redimensionarFoto(arquivo, 480, 0.75);
+      setModelo({ ...m, fotosExtras: [...(m.fotosExtras || []), dataUrl] });
+    } catch (e) {}
+    setCarregandoExtra(false);
+  };
+
+  const removerFotoExtra = (i) => {
+    setModelo({ ...m, fotosExtras: (m.fotosExtras || []).filter((_, idx) => idx !== i) });
   };
 
   return (
@@ -4453,6 +4749,26 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
             />
           </div>
         )}
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 12, color: "#6B6153" }}>Mais fotos (aparecem no catálogo do cliente)</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+            {(m.fotosExtras || []).map((foto, i) => (
+              <div key={i} style={{ position: "relative" }}>
+                <img src={foto} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: "1px solid #E4D9C4" }} />
+                <button
+                  type="button"
+                  onClick={() => removerFotoExtra(i)}
+                  style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#A83B2E", color: "#FBF4E9", border: "none", fontSize: 12, cursor: "pointer", lineHeight: 1 }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <input type="file" accept="image/*" onChange={(e) => onFotoExtra(e.target.files[0])} style={{ fontSize: 12.5, marginTop: 8 }} />
+          {carregandoExtra && <p style={{ fontSize: 11.5, color: "#8A7F6E", margin: "4px 0 0" }}>Processando foto…</p>}
+        </div>
 
         <div style={{ display: "grid", gap: 12 }}>
           <Field label="Nome"><input style={inputStyle} value={m.nome} onChange={set("nome")} /></Field>
@@ -4901,11 +5217,18 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
           <Field label="Storymaker">
             <CampoResponsavel capacidade="Storymaker" valor={p.storymaker} onChange={(v) => setProducao({ ...p, storymaker: v })} perfis={perfis} />
           </Field>
-          <Field label="Status">
+          <Field label="Status (fotos)">
             <select style={inputStyle} value={p.status} onChange={set("status")}>
               {STATUS_PRODUCAO.map((s) => <option key={s}>{s}</option>)}
             </select>
           </Field>
+          {p.temVideo && (
+            <Field label="Status (vídeo)">
+              <select style={inputStyle} value={p.statusVideo || "Agendado"} onChange={set("statusVideo")}>
+                {STATUS_PRODUCAO.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </Field>
+          )}
           <Field label="Status de pagamento">
             <select style={inputStyle} value={p.pagamentoStatus} onChange={set("pagamentoStatus")}>
               {STATUS_PAGAMENTO.map((s) => <option key={s}>{s}</option>)}
