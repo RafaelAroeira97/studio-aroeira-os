@@ -25,6 +25,23 @@ const STATUS_COR = {
 
 const STATUS_CONCLUIDO = "Aprovado"; // status que conta como "finalizado" em cálculos e no Quadro
 
+// uma produção só conta como concluída de verdade quando fotos E (se houver) vídeo estão aprovados
+const producaoConcluida = (p) => p.status === STATUS_CONCLUIDO && (!p.temVideo || p.statusVideo === STATUS_CONCLUIDO);
+
+// data em que a produção ficou de fato pronta (a mais tardia entre foto aprovada e vídeo aprovado)
+function dataConclusao(p) {
+  if (!producaoConcluida(p)) return null;
+  const historico = p.historico || [];
+  const entradaFoto = [...historico].reverse().find((h) => h.status === STATUS_CONCLUIDO && h.campo !== "video");
+  if (!entradaFoto) return null;
+  let em = entradaFoto.em;
+  if (p.temVideo) {
+    const entradaVideo = [...historico].reverse().find((h) => h.status === STATUS_CONCLUIDO && h.campo === "video");
+    if (entradaVideo && entradaVideo.em > em) em = entradaVideo.em;
+  }
+  return new Date(em).toISOString().slice(0, 10);
+}
+
 const STATUS_PAGAMENTO = ["Em aberto", "Pago", "Parcialmente pago", "Cancelado"];
 
 const PRECOS_PADRAO = { look: 40, lookbook: 150, video: 50, prato: 50, fotoCorporativa: 50 };
@@ -533,6 +550,40 @@ export default function StudioAroeiraOS() {
     })();
   }, []);
 
+  // ---- backup automático diário (guarda os últimos 14 dias) ----
+  useEffect(() => {
+    if (!loaded || !isAdmin) return;
+    (async () => {
+      const chaveHoje = `auto-backup-${hoje()}`;
+      try {
+        await storage.get(chaveHoje, true);
+        return; // já existe backup de hoje, não faz de novo
+      } catch (e) {
+        // não existe ainda — continua e cria
+      }
+      try {
+        const dump = {
+          exportadoEm: new Date().toISOString(),
+          versao: 1,
+          producoes,
+          clientesCadastro,
+          modelos,
+          precos,
+          segmentosDisponiveis,
+          perfis: perfis.map(({ pin, ...resto }) => resto),
+        };
+        await storage.set(chaveHoje, JSON.stringify(dump), true);
+
+        const lista = await storage.list("auto-backup-", true);
+        const chaves = (lista?.keys || []).slice().sort();
+        if (chaves.length > 14) {
+          const remover = chaves.slice(0, chaves.length - 14);
+          remover.forEach((k) => storage.delete(k, true).catch(() => {}));
+        }
+      } catch (e) {}
+    })();
+  }, [loaded, isAdmin]);
+
   const salvarPerfis = useCallback(async (novos) => {
     setPerfis(novos);
     try {
@@ -825,7 +876,7 @@ export default function StudioAroeiraOS() {
     salvarProducoes(
       producoes.map((p) => {
         if (p.id !== producaoId || p.status === novoStatus) return p;
-        const registro = { status: novoStatus, por: usuario?.nome || "desconhecido", em: Date.now() };
+        const registro = { status: novoStatus, por: usuario?.nome || "desconhecido", em: Date.now(), campo: "foto" };
         return { ...p, status: novoStatus, historico: [...(p.historico || []), registro] };
       })
     );
@@ -833,7 +884,11 @@ export default function StudioAroeiraOS() {
 
   const mudarStatusVideo = (producaoId, novoStatus) => {
     salvarProducoes(
-      producoes.map((p) => (p.id === producaoId ? { ...p, statusVideo: novoStatus } : p))
+      producoes.map((p) => {
+        if (p.id !== producaoId || p.statusVideo === novoStatus) return p;
+        const registro = { status: novoStatus, por: usuario?.nome || "desconhecido", em: Date.now(), campo: "video" };
+        return { ...p, statusVideo: novoStatus, historico: [...(p.historico || []), registro] };
+      })
     );
   };
 
@@ -1163,6 +1218,8 @@ export default function StudioAroeiraOS() {
             salvarClientesCadastro={salvarClientesCadastro}
             precos={precos}
             segmentosDisponiveis={segmentosDisponiveis}
+            producoes={producoes}
+            salvarProducoes={salvarProducoes}
           />
         )}
         {isAdmin && tab === "modelos" && (
@@ -1377,12 +1434,12 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
       .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1))
       .map((p) => [p.cliente, fmtData(p.data), p.horario || "—", p.status]);
 
-  const aprovadas = producoes.filter((p) => p.status === STATUS_CONCLUIDO);
+  const aprovadas = producoes.filter(producaoConcluida);
   const prazosEntrega = aprovadas
     .map((p) => {
-      const entrada = (p.historico || []).find((h) => h.status === STATUS_CONCLUIDO);
-      if (!entrada) return null;
-      return diasEntre(p.data, new Date(entrada.em).toISOString().slice(0, 10));
+      const dataFim = dataConclusao(p);
+      if (!dataFim) return null;
+      return diasEntre(p.data, dataFim);
     })
     .filter((v) => v !== null && v >= 0);
   const tempoMedioEntrega = prazosEntrega.length ? Math.round(prazosEntrega.reduce((s, v) => s + v, 0) / prazosEntrega.length) : null;
@@ -1509,7 +1566,7 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
   const isoSemana = inicioSemana.toISOString().slice(0, 10);
   const semana = producoes.filter((p) => p.data >= isoSemana);
   const faturamentoPrevistoSemana = semana.reduce((s, p) => s + totalProducao(p, precos), 0);
-  const concluidasSemana = semana.filter((p) => p.status === STATUS_CONCLUIDO).length;
+  const concluidasSemana = semana.filter(producaoConcluida).length;
 
   const historicoDoMes = historicoFinanceiro.filter((h) => h.mes === mesSelecionado).reduce((s, h) => s + (Number(h.valor) || 0), 0);
   const historicoDoAno = historicoFinanceiro.filter((h) => h.mes.startsWith(anoSelecionado)).reduce((s, h) => s + (Number(h.valor) || 0), 0);
@@ -1570,17 +1627,17 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
 
   // produtividade da equipe
   const nomesEquipe = Array.from(
-    new Set(producoes.flatMap((p) => [p.fotografo, p.filmmaker, p.editor, p.storymaker]).filter(Boolean))
+    new Set(producoes.flatMap((p) => [p.fotografo, p.filmmaker, p.editor, p.editorVideo, p.storymaker]).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
   const produtividade = nomesEquipe.map((nome) => {
-    const doColaborador = producoes.filter((p) => [p.fotografo, p.filmmaker, p.editor, p.storymaker].includes(nome));
-    const finalizadas = doColaborador.filter((p) => p.status === STATUS_CONCLUIDO);
+    const doColaborador = producoes.filter((p) => [p.fotografo, p.filmmaker, p.editor, p.editorVideo, p.storymaker].includes(nome));
+    const finalizadas = doColaborador.filter(producaoConcluida);
     const prazos = finalizadas
       .map((p) => {
-        const entrada = (p.historico || []).find((h) => h.status === STATUS_CONCLUIDO);
-        if (!entrada) return null;
-        return diasEntre(p.data, new Date(entrada.em).toISOString().slice(0, 10));
+        const dataFim = dataConclusao(p);
+        if (!dataFim) return null;
+        return diasEntre(p.data, dataFim);
       })
       .filter((v) => v !== null && v >= 0);
     const tempoMedio = prazos.length ? Math.round(prazos.reduce((s, v) => s + v, 0) / prazos.length) : null;
@@ -1601,7 +1658,7 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
         <div style={grid}>
           <StatCard label="Produções realizadas" value={semana.length} onClick={() => setDetalhe({ titulo: "Produções da semana", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(semana) })} />
           <StatCard label="Faturamento previsto" value={fmtBRL(faturamentoPrevistoSemana)} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Faturamento previsto da semana", colunas: ["Marca", "Data", "Valor"], linhas: listaValores(semana) })} />
-          <StatCard label="Aprovadas" value={concluidasSemana} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Aprovadas na semana", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(semana.filter((p) => p.status === STATUS_CONCLUIDO)) })} />
+          <StatCard label="Aprovadas" value={concluidasSemana} accent="#566B4F" onClick={() => setDetalhe({ titulo: "Aprovadas na semana", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(semana.filter(producaoConcluida)) })} />
         </div>
       </SecaoRecolhivel>
 
@@ -1763,10 +1820,8 @@ function Quadro({ producoes, onStatusChange, onStatusVideoChange }) {
   fimSemana.setDate(fimSemana.getDate() + 6);
   const isoFimSemana = fimSemana.toISOString().slice(0, 10);
 
-  const concluidaDeVerdade = (p) => p.status === STATUS_CONCLUIDO && (!p.temVideo || p.statusVideo === STATUS_CONCLUIDO);
-
   const ordenadas = producoes
-    .filter((p) => p.data >= isoInicioSemana && p.data <= isoFimSemana && !concluidaDeVerdade(p))
+    .filter((p) => p.data >= isoInicioSemana && p.data <= isoFimSemana && !producaoConcluida(p))
     .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1));
 
   return (
@@ -1942,18 +1997,33 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
   fimSemana.setDate(fimSemana.getDate() + 6);
   const isoFimSemana = fimSemana.toISOString().slice(0, 10);
 
-  const producoesExibidas = producoes.filter((p) => {
-    if (filtroPeriodo === "semana" && !(p.data >= isoInicioSemana && p.data <= isoFimSemana)) return false;
-    if (filtroStatus === "Atrasadas") {
-      if (!(p.prazo < hoje0 && !["Entregue ao cliente", "Aprovado"].includes(p.status))) return false;
-    } else if (filtroStatus && p.status !== filtroStatus) {
-      return false;
-    }
-    if (filtroResponsavel && ![p.fotografo, p.filmmaker, p.editor, p.editorVideo, p.storymaker].includes(filtroResponsavel)) {
-      return false;
-    }
-    return true;
-  });
+  const PRIORIDADE_STATUS = {
+    "Agendado": 0,
+    "Em edição": 1,
+    "Alteração": 2,
+    "Entregue ao cliente": 3,
+    "Aprovado": 4,
+  };
+
+  const producoesExibidas = producoes
+    .filter((p) => {
+      if (filtroPeriodo === "semana" && !(p.data >= isoInicioSemana && p.data <= isoFimSemana)) return false;
+      if (filtroStatus === "Atrasadas") {
+        if (!(p.prazo < hoje0 && !["Entregue ao cliente", "Aprovado"].includes(p.status))) return false;
+      } else if (filtroStatus && p.status !== filtroStatus) {
+        return false;
+      }
+      if (filtroResponsavel && ![p.fotografo, p.filmmaker, p.editor, p.editorVideo, p.storymaker].includes(filtroResponsavel)) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const pa = PRIORIDADE_STATUS[a.status] ?? 5;
+      const pb = PRIORIDADE_STATUS[b.status] ?? 5;
+      if (pa !== pb) return pa - pb;
+      return a.data < b.data ? -1 : a.data > b.data ? 1 : 0;
+    });
 
   const [expandidoId, setExpandidoId] = useState(null);
 
@@ -2210,7 +2280,7 @@ const btnGhost = {
   color: "#2B2420",
 };
 
-function ConfirmarExclusao({ titulo, mensagem, onConfirmar, onCancelar }) {
+function ConfirmarExclusao({ titulo, mensagem, onConfirmar, onCancelar, textoConfirmar = "Sim, excluir" }) {
   return (
     <div
       style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 70 }}
@@ -2222,7 +2292,7 @@ function ConfirmarExclusao({ titulo, mensagem, onConfirmar, onCancelar }) {
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18 }}>
           <button onClick={onCancelar} style={btnGhost}>Cancelar</button>
           <button onClick={onConfirmar} style={{ background: "#A83B2E", color: "#FBF4E9", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>
-            Sim, excluir
+            {textoConfirmar}
           </button>
         </div>
       </div>
@@ -2764,13 +2834,18 @@ const ALERTA_COR = {
   "Prospect": "#8A7F6E",
 };
 
-function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segmentosDisponiveis }) {
+function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segmentosDisponiveis, producoes, salvarProducoes }) {
   const [detalheNome, setDetalheNome] = useState(null);
   const [editandoContato, setEditandoContato] = useState(null); // {nome, telefone, email, instagram, observacoes}
   const [filtroAlerta, setFiltroAlerta] = useState(null);
   const [listaAberta, setListaAberta] = useState(false);
   const [buscaCliente, setBuscaCliente] = useState("");
   const [filtroSegmento, setFiltroSegmento] = useState("");
+  const [unificarAberto, setUnificarAberto] = useState(false);
+  const [selecionadosUnificar, setSelecionadosUnificar] = useState([]);
+  const [principalUnificar, setPrincipalUnificar] = useState("");
+  const [confirmandoUnificar, setConfirmandoUnificar] = useState(false);
+  const [resultadoUnificar, setResultadoUnificar] = useState(null);
 
   const abrirNovoCliente = () => setEditandoContato({ novo: true, nome: "", telefone: "", email: "", instagram: "", linkDrive: "", segmentos: [], publico: [], clienteMensal: false, mensalidades: [], observacoes: "" });
   const abrirEditarContato = (c) =>
@@ -2821,8 +2896,140 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
 
   const clienteDetalhe = clientes.find((c) => c.nome === detalheNome);
 
+  // ---- unificar clientes ----
+  const todosOsNomes = Array.from(
+    new Set([...producoes.map((p) => p.cliente), ...clientesCadastro.map((c) => c.nome)].filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+  const alternarSelecaoUnificar = (nome) => {
+    setSelecionadosUnificar((atual) => {
+      const novos = atual.includes(nome) ? atual.filter((n) => n !== nome) : [...atual, nome];
+      if (!novos.includes(principalUnificar)) setPrincipalUnificar(novos[0] || "");
+      return novos;
+    });
+  };
+
+  const executarUnificacao = () => {
+    if (selecionadosUnificar.length < 2 || !principalUnificar) return;
+    const outros = selecionadosUnificar.filter((n) => n !== principalUnificar);
+
+    // renomeia o cliente em todas as produções
+    const novasProducoes = producoes.map((p) =>
+      outros.includes(p.cliente) ? { ...p, cliente: principalUnificar } : p
+    );
+
+    // mescla os cadastros num só (o principal fica com os dados combinados)
+    const cadastroPrincipal = clientesCadastro.find((c) => c.nome === principalUnificar) || { nome: principalUnificar };
+    const cadastrosOutros = clientesCadastro.filter((c) => outros.includes(c.nome));
+
+    const mesclado = { ...cadastroPrincipal };
+    cadastrosOutros.forEach((c) => {
+      mesclado.telefone = mesclado.telefone || c.telefone;
+      mesclado.email = mesclado.email || c.email;
+      mesclado.instagram = mesclado.instagram || c.instagram;
+      mesclado.linkDrive = mesclado.linkDrive || c.linkDrive;
+      mesclado.observacoes = [mesclado.observacoes, c.observacoes].filter(Boolean).join(" — ");
+      mesclado.segmentos = Array.from(new Set([...(mesclado.segmentos || []), ...(c.segmentos || [])]));
+      mesclado.publico = Array.from(new Set([...(mesclado.publico || []), ...(c.publico || [])]));
+      mesclado.mensalidades = [...(mesclado.mensalidades || []), ...(c.mensalidades || [])];
+      mesclado.clienteMensal = mesclado.clienteMensal || c.clienteMensal || c.apenasMensal;
+      if (!mesclado.valorMensal && c.valorMensal) mesclado.valorMensal = c.valorMensal;
+    });
+
+    const novoClientesCadastro = [
+      ...clientesCadastro.filter((c) => !selecionadosUnificar.includes(c.nome)),
+      mesclado,
+    ];
+
+    salvarProducoes(novasProducoes);
+    salvarClientesCadastro(novoClientesCadastro);
+    setResultadoUnificar({ principal: principalUnificar, outros });
+    setSelecionadosUnificar([]);
+    setPrincipalUnificar("");
+    setConfirmandoUnificar(false);
+  };
+
   return (
     <div>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: unificarAberto ? 10 : 22 }}>
+        <button
+          onClick={() => setUnificarAberto(!unificarAberto)}
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", padding: "6px 0" }}
+        >
+          <h2 className="font-display" style={{ fontSize: 15.5, fontWeight: 600, color: "#8A7F6E", margin: 0 }}>
+            🔀 Unificar clientes duplicados
+          </h2>
+          <span style={{ color: "#B0A388", fontSize: 12, transform: unificarAberto ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▾</span>
+        </button>
+      </div>
+
+      {unificarAberto && (
+        <Card style={{ padding: 18, marginBottom: 26 }}>
+          <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
+            Selecione dois ou mais nomes que são a mesma marca (ex.: "Boise" e "Boise Externo"). Escolha qual vira o nome
+            principal — as produções e o cadastro dos outros são transferidos pra ele, e os demais somem da lista.
+          </p>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14, maxHeight: 220, overflowY: "auto", padding: "4px 0" }}>
+            {todosOsNomes.map((nome) => {
+              const ativo = selecionadosUnificar.includes(nome);
+              return (
+                <button
+                  key={nome}
+                  onClick={() => alternarSelecaoUnificar(nome)}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: 999,
+                    border: "1px solid " + (ativo ? "#7A2E22" : "#DCCFB2"),
+                    background: ativo ? "#7A2E22" : "transparent",
+                    color: ativo ? "#FBF4E9" : "#6B6153",
+                    fontSize: 12.5,
+                    fontWeight: ativo ? 700 : 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  {nome}
+                </button>
+              );
+            })}
+          </div>
+
+          {selecionadosUnificar.length >= 2 && (
+            <div style={{ marginBottom: 14 }}>
+              <Field label="Qual vira o nome principal?">
+                <select style={inputStyle} value={principalUnificar} onChange={(e) => setPrincipalUnificar(e.target.value)}>
+                  {selecionadosUnificar.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </Field>
+            </div>
+          )}
+
+          <button
+            onClick={() => setConfirmandoUnificar(true)}
+            disabled={selecionadosUnificar.length < 2}
+            style={{ ...btnPrimario, opacity: selecionadosUnificar.length < 2 ? 0.5 : 1, cursor: selecionadosUnificar.length < 2 ? "not-allowed" : "pointer" }}
+          >
+            Unificar selecionados
+          </button>
+
+          {resultadoUnificar && (
+            <p style={{ fontSize: 12.5, marginTop: 10, color: "#566B4F" }}>
+              ✓ "{resultadoUnificar.outros.join(", ")}" {resultadoUnificar.outros.length > 1 ? "foram unificados" : "foi unificado"} em "{resultadoUnificar.principal}".
+            </p>
+          )}
+        </Card>
+      )}
+
+      {confirmandoUnificar && (
+        <ConfirmarExclusao
+          titulo="Unificar esses clientes?"
+          mensagem={`Todas as produções de "${selecionadosUnificar.filter((n) => n !== principalUnificar).join(", ")}" passam a pertencer a "${principalUnificar}", e os cadastros são mesclados. Isso não pode ser desfeito automaticamente.`}
+          onCancelar={() => setConfirmandoUnificar(false)}
+          onConfirmar={executarUnificacao}
+          textoConfirmar="Sim, unificar"
+        />
+      )}
+
       <SectionTitle title="Painel comercial" />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px,1fr))", gap: 12, marginBottom: 26 }}>
         <StatCard label="Lead: Ativos" value={clientes.filter((c) => c.alerta === "Lead: Ativos").length} accent="#566B4F" onClick={() => setFiltroAlerta("Lead: Ativos")} />
@@ -3287,7 +3494,19 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
                 <textarea rows={3} style={{ ...inputStyle, resize: "vertical" }} value={editandoContato.observacoes} onChange={(e) => setEditandoContato({ ...editandoContato, observacoes: e.target.value })} />
               </Field>
             </div>
-            <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "flex-end" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "flex-end",
+                marginTop: 18,
+                paddingTop: 12,
+                position: "sticky",
+                bottom: -1,
+                background: "#FFFDF9",
+                borderTop: "1px solid #EFE6D4",
+              }}
+            >
               <button onClick={() => setEditandoContato(null)} style={btnGhost}>Cancelar</button>
               <button onClick={salvarContato} style={btnPrimario}>Salvar</button>
             </div>
@@ -3373,6 +3592,30 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
     if (backupPendente.segmentosDisponiveis) salvarSegmentosDisponiveis(backupPendente.segmentosDisponiveis);
     setBackupPendente(null);
     setTimeout(() => setRestaurando(false), 600);
+  };
+
+  const [backupsAutomaticos, setBackupsAutomaticos] = useState([]);
+  const [carregandoBackupsAuto, setCarregandoBackupsAuto] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const lista = await storage.list("auto-backup-", true);
+        const chaves = (lista?.keys || []).slice().sort().reverse();
+        setBackupsAutomaticos(chaves);
+      } catch (e) {}
+      setCarregandoBackupsAuto(false);
+    })();
+  }, []);
+
+  const restaurarBackupAutomatico = async (chave) => {
+    try {
+      const item = await storage.get(chave, true);
+      const dados = JSON.parse(item.value);
+      setBackupPendente(dados);
+    } catch (e) {
+      setBackupPendente({ erro: true });
+    }
   };
 
   const normalizar = (s) => (s || "").toString().trim().toLowerCase();
@@ -3796,6 +4039,33 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
             </div>
           )}
         </div>
+      </Card>
+
+      <SectionTitle title="Backups automáticos" />
+      <Card style={{ padding: 18, marginBottom: 24, maxWidth: 480 }}>
+        <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
+          O app salva sozinho uma cópia de tudo, uma vez por dia, guardando os últimos 14 dias — sem você precisar
+          lembrar de baixar nada. Se algo der errado, escolha um dia daqui pra restaurar.
+        </p>
+        {carregandoBackupsAuto ? (
+          <p style={{ fontSize: 12.5, color: "#8A7F6E" }}>Carregando…</p>
+        ) : backupsAutomaticos.length === 0 ? (
+          <p style={{ fontSize: 12.5, color: "#8A7F6E" }}>
+            Ainda não tem nenhum backup automático — o primeiro é salvo sozinho hoje.
+          </p>
+        ) : (
+          <div style={{ display: "grid", gap: 6 }}>
+            {backupsAutomaticos.map((chave) => {
+              const data = chave.replace("auto-backup-", "");
+              return (
+                <div key={chave} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 10px", background: "#F8F3E8", borderRadius: 8 }}>
+                  <span style={{ fontSize: 13 }}>{fmtData(data)}</span>
+                  <button onClick={() => restaurarBackupAutomatico(chave)} style={{ ...btnGhost, padding: "4px 10px", fontSize: 12 }}>Restaurar</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
       <SectionTitle title="Acessos da equipe" />
@@ -4836,7 +5106,19 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
           </Field>
         </div>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            marginTop: 20,
+            paddingTop: 12,
+            position: "sticky",
+            bottom: -1,
+            background: "#FFFDF9",
+            borderTop: "1px solid #EFE6D4",
+          }}
+        >
           <button onClick={onFechar} style={btnGhost}>Cancelar</button>
           <button onClick={onSalvar} style={btnPrimario}>Salvar modelo</button>
         </div>
@@ -5250,7 +5532,19 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
         </>
         )}
 
-        <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            marginTop: 20,
+            paddingTop: 12,
+            position: "sticky",
+            bottom: -1,
+            background: "#FFFDF9",
+            borderTop: "1px solid #EFE6D4",
+          }}
+        >
           <button onClick={onFechar} style={btnGhost}>Cancelar</button>
           <button onClick={onSalvar} style={btnPrimario}>Salvar produção</button>
         </div>
