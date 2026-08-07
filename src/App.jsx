@@ -3529,6 +3529,11 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
   const [carregandoFotoPerfil, setCarregandoFotoPerfil] = useState(null);
   const [novoSegmento, setNovoSegmento] = useState("");
   const [novoCenario, setNovoCenario] = useState("");
+  const [unificarCenarioAberto, setUnificarCenarioAberto] = useState(false);
+  const [selecionadosCenario, setSelecionadosCenario] = useState([]);
+  const [principalCenario, setPrincipalCenario] = useState("");
+  const [confirmandoUnificarCenario, setConfirmandoUnificarCenario] = useState(false);
+  const [resultadoUnificarCenario, setResultadoUnificarCenario] = useState(null);
   const [textoNotificacao, setTextoNotificacao] = useState("");
   const [tipoDestinatario, setTipoDestinatario] = useState("todos");
   const [selecionadosNotificacao, setSelecionadosNotificacao] = useState([]);
@@ -3927,6 +3932,63 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
 
   const pendentes = perfis.filter((p) => p.status === "pendente");
   const aprovados = perfis.filter((p) => (p.status || "aprovado") === "aprovado");
+
+  // ---- unificar cenários ----
+  const todosOsCenarios = Array.from(
+    new Set([
+      ...cenariosDisponiveis,
+      ...producoes.map((p) => p.cenario).filter(Boolean),
+      ...producoes.flatMap((p) => (p.cenariosSlots || []).map((s) => s.cenario)).filter(Boolean),
+    ])
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+  const alternarSelecaoCenario = (nome) => {
+    setSelecionadosCenario((atual) => {
+      const novos = atual.includes(nome) ? atual.filter((n) => n !== nome) : [...atual, nome];
+      if (!novos.includes(principalCenario)) setPrincipalCenario(novos[0] || "");
+      return novos;
+    });
+  };
+
+  const executarUnificacaoCenario = () => {
+    if (selecionadosCenario.length < 2 || !principalCenario) return;
+    const outros = selecionadosCenario.filter((n) => n !== principalCenario);
+
+    const novasProducoes = producoes.map((p) => {
+      let mudou = false;
+      let novoCenarioCampo = p.cenario;
+      if (outros.includes(p.cenario)) {
+        novoCenarioCampo = principalCenario;
+        mudou = true;
+      }
+      let novosSlots = p.cenariosSlots;
+      if (p.cenariosSlots && p.cenariosSlots.some((s) => outros.includes(s.cenario))) {
+        novosSlots = p.cenariosSlots.map((s) => (outros.includes(s.cenario) ? { ...s, cenario: principalCenario } : s));
+        // se dois slots viraram o mesmo cenário, soma os looks e remove o duplicado
+        const agrupado = [];
+        novosSlots.forEach((s) => {
+          const existente = agrupado.find((a) => a.cenario === s.cenario);
+          if (existente) existente.looks = (Number(existente.looks) || 0) + (Number(s.looks) || 0);
+          else agrupado.push({ ...s });
+        });
+        novosSlots = agrupado;
+        novoCenarioCampo = novosSlots.map((s) => s.cenario).filter(Boolean).join(", ");
+        mudou = true;
+      }
+      return mudou ? { ...p, cenario: novoCenarioCampo, cenariosSlots: novosSlots } : p;
+    });
+
+    const novaListaCenarios = Array.from(
+      new Set([...cenariosDisponiveis.filter((c) => !outros.includes(c)), principalCenario])
+    );
+
+    salvarProducoes(novasProducoes);
+    salvarCenariosDisponiveis(novaListaCenarios);
+    setResultadoUnificarCenario({ principal: principalCenario, outros });
+    setSelecionadosCenario([]);
+    setPrincipalCenario("");
+    setConfirmandoUnificarCenario(false);
+  };
 
   return (
     <div>
@@ -4355,7 +4417,84 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
             + Adicionar
           </button>
         </div>
+
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid #EFE6D4" }}>
+          <button
+            onClick={() => setUnificarCenarioAberto(!unificarCenarioAberto)}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", padding: 0, color: "#8A7F6E", fontSize: 13.5, fontWeight: 600 }}
+          >
+            🔀 Unificar cenários duplicados
+            <span style={{ fontSize: 11, transform: unificarCenarioAberto ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▾</span>
+          </button>
+
+          {unificarCenarioAberto && (
+            <div style={{ marginTop: 12 }}>
+              <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
+                Selecione dois ou mais nomes que são o mesmo cenário. As produções que usam os outros passam a usar o
+                principal, e a lista de cenários é atualizada.
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12, maxHeight: 200, overflowY: "auto" }}>
+                {todosOsCenarios.map((nome) => {
+                  const ativo = selecionadosCenario.includes(nome);
+                  return (
+                    <button
+                      key={nome}
+                      onClick={() => alternarSelecaoCenario(nome)}
+                      style={{
+                        padding: "5px 12px",
+                        borderRadius: 999,
+                        border: "1px solid " + (ativo ? "#7A2E22" : "#DCCFB2"),
+                        background: ativo ? "#7A2E22" : "transparent",
+                        color: ativo ? "#FBF4E9" : "#6B6153",
+                        fontSize: 12.5,
+                        fontWeight: ativo ? 700 : 500,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {nome}
+                    </button>
+                  );
+                })}
+                {todosOsCenarios.length === 0 && <span style={{ fontSize: 12.5, color: "#8A7F6E" }}>Nenhum cenário registrado ainda.</span>}
+              </div>
+
+              {selecionadosCenario.length >= 2 && (
+                <div style={{ marginBottom: 12 }}>
+                  <Field label="Qual vira o nome principal?">
+                    <select style={inputStyle} value={principalCenario} onChange={(e) => setPrincipalCenario(e.target.value)}>
+                      {selecionadosCenario.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </Field>
+                </div>
+              )}
+
+              <button
+                onClick={() => setConfirmandoUnificarCenario(true)}
+                disabled={selecionadosCenario.length < 2}
+                style={{ ...btnPrimario, marginTop: 0, opacity: selecionadosCenario.length < 2 ? 0.5 : 1, cursor: selecionadosCenario.length < 2 ? "not-allowed" : "pointer" }}
+              >
+                Unificar selecionados
+              </button>
+
+              {resultadoUnificarCenario && (
+                <p style={{ fontSize: 12.5, marginTop: 10, color: "#566B4F" }}>
+                  ✓ "{resultadoUnificarCenario.outros.join(", ")}" {resultadoUnificarCenario.outros.length > 1 ? "foram unificados" : "foi unificado"} em "{resultadoUnificarCenario.principal}".
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       </Card>
+
+      {confirmandoUnificarCenario && (
+        <ConfirmarExclusao
+          titulo="Unificar esses cenários?"
+          mensagem={`Todas as produções que usam "${selecionadosCenario.filter((n) => n !== principalCenario).join(", ")}" passam a usar "${principalCenario}". Isso não pode ser desfeito automaticamente.`}
+          onCancelar={() => setConfirmandoUnificarCenario(false)}
+          onConfirmar={executarUnificacaoCenario}
+          textoConfirmar="Sim, unificar"
+        />
+      )}
 
       <SectionTitle title="Importar clientes de uma planilha" />
       <Card style={{ padding: 18, marginBottom: 24, maxWidth: 480 }}>
