@@ -1517,6 +1517,11 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
             {fmtData(proximoEnsaio.data)} às {proximoEnsaio.horario}
             {proximoEnsaio.localizacao && <> · 📍 {proximoEnsaio.localizacao}</>}
           </div>
+          {proximoEnsaio.prazo && (
+            <div className="font-mono" style={{ fontSize: 12.5, fontWeight: 700, color: "#7A2E22", marginTop: 6 }}>
+              📦 Prazo de entrega: {fmtData(proximoEnsaio.prazo)}
+            </div>
+          )}
           <button onClick={() => setAvisando(proximoEnsaio)} style={{ ...btnGhost, marginTop: 10, color: "#A83B2E" }}>
             ⚠️ Avisar administração
           </button>
@@ -1896,6 +1901,14 @@ function Quadro({ producoes, onStatusChange, onStatusVideoChange }) {
                   <div style={{ fontSize: 12, color: "#8A7F6E", marginTop: 2 }}>
                     {fmtData(p.data)} · {p.tipo || "sem tipo"}
                   </div>
+                  {p.prazo && (
+                    <div
+                      className="font-mono"
+                      style={{ fontSize: 11, fontWeight: 700, marginTop: 2, color: !producaoConcluida(p) && p.prazo < hoje() ? "#A83B2E" : "#7A2E22" }}
+                    >
+                      📦 entrega {fmtData(p.prazo)}
+                    </div>
+                  )}
                   {ultimaAlteracao && (
                     <div className="font-mono" style={{ fontSize: 10.5, color: "#B0A388", marginTop: 2 }}>
                       por {ultimaAlteracao.por} · {fmtDataHora(ultimaAlteracao.em)}
@@ -2156,6 +2169,20 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
                     {fmtData(p.data)} às {p.horario}
                     {p.localizacao && <> · 📍 {p.localizacao}</>}
                   </div>
+                  {p.prazo && (
+                    <div
+                      className="font-mono"
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        marginTop: 3,
+                        color: !producaoConcluida(p) && p.prazo < hoje() ? "#A83B2E" : "#7A2E22",
+                      }}
+                    >
+                      📦 Entrega: {fmtData(p.prazo)}
+                      {!producaoConcluida(p) && p.prazo < hoje() && " — atrasada"}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }} onClick={(e) => e.stopPropagation()}>
                   <span title="Status das fotos" style={{ fontSize: 12 }}>📷</span>
