@@ -437,16 +437,8 @@ export default function StudioAroeiraOS() {
   const [cenariosDisponiveis, setCenariosDisponiveis] = useState([]);
   const [modelos, setModelos] = useState([]);
   const [historicoFinanceiro, setHistoricoFinanceiro] = useState([]);
-  const [despesasFixas, setDespesasFixas] = useState({
-    salario: 0,
-    aluguel: 0,
-    energia: 0,
-    trafegoPago: 0,
-    contador: 0,
-    faxina: 0,
-    agua: 0,
-    internet: 0,
-  });
+  const [funcionarios, setFuncionarios] = useState([]);
+  const [despesasGerais, setDespesasGerais] = useState([]);
   const [editandoModelo, setEditandoModelo] = useState(null);
   const [notificacoes, setNotificacoes] = useState([]);
   const [ultimaVista, setUltimaVista] = useState(0);
@@ -531,8 +523,36 @@ export default function StudioAroeiraOS() {
         }
       } catch (e) {}
       try {
-        const df = await storage.get("despesas-fixas", true);
-        if (df) setDespesasFixas(JSON.parse(df.value));
+        const fn = await storage.get("funcionarios", true);
+        if (fn) setFuncionarios(JSON.parse(fn.value));
+      } catch (e) {}
+      try {
+        const dg = await storage.get("despesas-gerais", true);
+        if (dg) {
+          setDespesasGerais(JSON.parse(dg.value));
+        } else {
+          // migração única: se existir o formato antigo (despesas-fixas), converte pra despesas gerais
+          try {
+            const df = await storage.get("despesas-fixas", true);
+            if (df) {
+              const antigas = JSON.parse(df.value);
+              const rotulos = { aluguel: "Aluguel", energia: "Energia", trafegoPago: "Tráfego pago", contador: "Contador", faxina: "Faxina", agua: "Água", internet: "Internet" };
+              const mesAtualMigracao = hoje().slice(0, 7);
+              const migradas = Object.entries(antigas)
+                .filter(([chave, valor]) => chave !== "salario" && Number(valor) > 0)
+                .map(([chave, valor]) => ({ id: uid(), mes: mesAtualMigracao, nome: rotulos[chave] || chave, valor: Number(valor) }));
+              if (migradas.length) {
+                setDespesasGerais(migradas);
+                storage.set("despesas-gerais", JSON.stringify(migradas), true).catch(() => {});
+              }
+              if (Number(antigas.salario) > 0) {
+                const funcionarioMigrado = [{ id: uid(), nome: "Salário (a renomear)", pagamentos: [{ mes: mesAtualMigracao, valor: Number(antigas.salario) }] }];
+                setFuncionarios(funcionarioMigrado);
+                storage.set("funcionarios", JSON.stringify(funcionarioMigrado), true).catch(() => {});
+              }
+            }
+          } catch (e2) {}
+        }
       } catch (e) {}
       try {
         const nt = await storage.get("notificacoes", true);
@@ -573,6 +593,8 @@ export default function StudioAroeiraOS() {
           modelos,
           precos,
           segmentosDisponiveis,
+          funcionarios,
+          despesasGerais,
           perfis: perfis.map(({ pin, ...resto }) => resto),
         };
         await storage.set(chaveHoje, JSON.stringify(dump), true);
@@ -644,10 +666,18 @@ export default function StudioAroeiraOS() {
     } catch (e) {}
   }, []);
 
-  const salvarDespesasFixas = useCallback(async (novas) => {
-    setDespesasFixas(novas);
+  const salvarFuncionarios = useCallback(async (novos) => {
+    setFuncionarios(novos);
     try {
-      await storage.set("despesas-fixas", JSON.stringify(novas), true);
+      await storage.set("funcionarios", JSON.stringify(novos), true);
+      mostrarSalvo();
+    } catch (e) {}
+  }, []);
+
+  const salvarDespesasGerais = useCallback(async (novas) => {
+    setDespesasGerais(novas);
+    try {
+      await storage.set("despesas-gerais", JSON.stringify(novas), true);
       mostrarSalvo();
     } catch (e) {}
   }, []);
@@ -898,6 +928,12 @@ export default function StudioAroeiraOS() {
     );
   };
 
+  const mudarStatusPagamento = (producaoId, novoStatus) => {
+    salvarProducoes(
+      producoes.map((p) => (p.id === producaoId ? { ...p, pagamentoStatus: novoStatus } : p))
+    );
+  };
+
   // ---- derivações ----
   const minhasProducoes = useMemo(() => {
     if (isAdmin || !usuario) return producoes;
@@ -1128,7 +1164,7 @@ export default function StudioAroeiraOS() {
                     Notificações
                   </div>
                   {[...notificacoesVisiveis].reverse().map((n) => {
-                    const cor = n.tipo === "novo" ? "#566B4F" : n.tipo === "cancelado" ? "#A83B2E" : n.tipo === "aviso" ? "#A83B2E" : n.tipo === "recado" ? "#3E6B8A" : "#B9862E";
+                    const cor = n.tipo === "novo" ? "#566B4F" : n.tipo === "cancelado" ? "#A83B2E" : n.tipo === "aviso" ? "#A83B2E" : n.tipo === "recado" ? "#3E6B8A" : n.tipo === "pagamento" ? "#566B4F" : "#B9862E";
                     return (
                       <div key={n.id} style={{ padding: "8px 14px", borderTop: "1px solid #F0E8D6", display: "flex", gap: 8 }}>
                         <span style={{ width: 7, height: 7, borderRadius: 999, background: cor, marginTop: 5, flexShrink: 0 }} />
@@ -1200,6 +1236,7 @@ export default function StudioAroeiraOS() {
             onDuplicar={duplicarProducao}
             onStatusChange={mudarStatus}
             onStatusVideoChange={mudarStatusVideo}
+            onStatusPagamentoChange={mudarStatusPagamento}
             onAvisarProblema={sinalizarProblema}
             precos={precos}
             isAdmin={isAdmin}
@@ -1214,8 +1251,10 @@ export default function StudioAroeiraOS() {
             clientesCadastro={clientesCadastro}
             historicoFinanceiro={historicoFinanceiro}
             salvarHistoricoFinanceiro={salvarHistoricoFinanceiro}
-            despesasFixas={despesasFixas}
-            salvarDespesasFixas={salvarDespesasFixas}
+            funcionarios={funcionarios}
+            salvarFuncionarios={salvarFuncionarios}
+            despesasGerais={despesasGerais}
+            salvarDespesasGerais={salvarDespesasGerais}
             modelos={modelos}
             salvarProducoes={salvarProducoes}
             cenariosDisponiveis={cenariosDisponiveis}
@@ -1265,6 +1304,10 @@ export default function StudioAroeiraOS() {
             cenariosDisponiveis={cenariosDisponiveis}
             salvarCenariosDisponiveis={salvarCenariosDisponiveis}
             registrarNotificacao={registrarNotificacao}
+            funcionarios={funcionarios}
+            salvarFuncionarios={salvarFuncionarios}
+            despesasGerais={despesasGerais}
+            salvarDespesasGerais={salvarDespesasGerais}
           />
         )}
       </main>
@@ -1982,7 +2025,7 @@ function Quadro({ producoes, onStatusChange, onStatusVideoChange }) {
 }
 
 // ---------- Produções ----------
-function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, onDuplicar, onStatusChange, onStatusVideoChange, onAvisarProblema, precos, isAdmin, titulo }) {
+function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, onDuplicar, onStatusChange, onStatusVideoChange, onStatusPagamentoChange, onAvisarProblema, precos, isAdmin, titulo }) {
   const [filtroStatus, setFiltroStatus] = useState("");
   const [filtroResponsavel, setFiltroResponsavel] = useState("");
   const [filtroPeriodo, setFiltroPeriodo] = useState("semana");
@@ -2178,7 +2221,23 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
 
                   {isAdmin && (
                     <div style={{ marginBottom: 8 }}>
-                      <Badge color={p.pagamentoStatus === "Pago" ? "#566B4F" : "#B9862E"}>{p.pagamentoStatus}</Badge>
+                      <select
+                        value={p.pagamentoStatus}
+                        onChange={(e) => onStatusPagamentoChange(p.id, e.target.value)}
+                        className="font-mono"
+                        style={{
+                          fontSize: 11,
+                          letterSpacing: "0.04em",
+                          textTransform: "uppercase",
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          border: "1px solid " + (p.pagamentoStatus === "Pago" ? "#566B4F" : "#B9862E"),
+                          color: p.pagamentoStatus === "Pago" ? "#566B4F" : "#B9862E",
+                          background: "transparent",
+                        }}
+                      >
+                        {STATUS_PAGAMENTO.map((s) => <option key={s}>{s}</option>)}
+                      </select>
                     </div>
                   )}
 
@@ -2369,7 +2428,7 @@ const CORES_PUBLICO = {
   "Não informado": "#8A7F6E",
 };
 
-function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, salvarHistoricoFinanceiro, despesasFixas, salvarDespesasFixas, modelos, salvarProducoes, cenariosDisponiveis }) {
+function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, salvarHistoricoFinanceiro, funcionarios, salvarFuncionarios, despesasGerais, salvarDespesasGerais, modelos, salvarProducoes, cenariosDisponiveis }) {
   const clientesApenasMensal = new Set(clientesCadastro.filter((c) => c.clienteMensal || c.apenasMensal).map((c) => c.nome));
   const producoesFaturaveis = producoes.filter((p) => !clientesApenasMensal.has(p.cliente));
 
@@ -2389,7 +2448,10 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
     recebidoRecorrente;
   const aberto = total - recebido;
 
-  const totalDespesas = Object.values(despesasFixas || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+  const todosOsPagamentosFuncionarios = funcionarios.flatMap((f) => (f.pagamentos || []).map((p) => ({ ...p, funcionario: f.nome })));
+  const totalDespesas =
+    todosOsPagamentosFuncionarios.reduce((s, p) => s + (Number(p.valor) || 0), 0) +
+    despesasGerais.reduce((s, d) => s + (Number(d.valor) || 0), 0);
   const lucro = total - totalDespesas;
 
   const producoesReais = producoes.filter((p) => p.tipo !== "Histórico (importado)");
@@ -2453,6 +2515,13 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
 
   const [mostrarAberto, setMostrarAberto] = useState(false);
   const [cenarioSelecionado, setCenarioSelecionado] = useState(null);
+  const [novoFuncionarioNome, setNovoFuncionarioNome] = useState("");
+  const [funcionarioAberto, setFuncionarioAberto] = useState(null);
+  const [novaDespesaNome, setNovaDespesaNome] = useState("");
+  const [novaDespesaMes, setNovaDespesaMes] = useState(hoje().slice(0, 7));
+  const [novaDespesaValor, setNovaDespesaValor] = useState("");
+  const [novaDespesaCategoria, setNovaDespesaCategoria] = useState(CATEGORIAS_DESPESA[4]);
+  const [novaDespesaVencimento, setNovaDespesaVencimento] = useState("");
   const [mostrarRecorrente, setMostrarRecorrente] = useState(false);
   const [anoFinanceiro, setAnoFinanceiro] = useState(hoje().slice(0, 4));
 
@@ -2472,8 +2541,82 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
       doMes.filter((p) => p.pagamentoStatus === "Pago").reduce((s, p) => s + totalProducao(p, precos), 0) +
       historicoMes +
       recorrenteRecebidoMes;
-    return { mes: nome, faturado, recebido };
+    const despesasMes =
+      todosOsPagamentosFuncionarios.filter((p) => p.mes === mesStr).reduce((s, p) => s + (Number(p.valor) || 0), 0) +
+      despesasGerais.filter((d) => d.mes === mesStr).reduce((s, d) => s + (Number(d.valor) || 0), 0);
+    return { mes: nome, mesStr, faturado, recebido, despesas: despesasMes, lucro: faturado - despesasMes };
   });
+
+  const adicionarFuncionario = () => {
+    const nome = novoFuncionarioNome.trim();
+    if (!nome) return;
+    salvarFuncionarios([...funcionarios, { id: uid(), nome, pagamentos: [] }]);
+    setNovoFuncionarioNome("");
+  };
+
+  const removerFuncionario = (id) => {
+    salvarFuncionarios(funcionarios.filter((f) => f.id !== id));
+  };
+
+  const adicionarPagamentoFuncionario = (funcionarioId) => {
+    salvarFuncionarios(
+      funcionarios.map((f) => {
+        if (f.id !== funcionarioId) return f;
+        const ultimoMes = f.pagamentos.length ? f.pagamentos[f.pagamentos.length - 1].mes : hoje().slice(0, 7);
+        const [ano, mes] = ultimoMes.split("-").map(Number);
+        const proximo = mes === 12 ? `${ano + 1}-01` : `${ano}-${String(mes + 1).padStart(2, "0")}`;
+        const valorAnterior = f.pagamentos.length ? f.pagamentos[f.pagamentos.length - 1].valor : 0;
+        return { ...f, pagamentos: [...f.pagamentos, { mes: f.pagamentos.length ? proximo : hoje().slice(0, 7), valor: valorAnterior }] };
+      })
+    );
+  };
+
+  const mudarPagamentoFuncionario = (funcionarioId, index, campo, valor) => {
+    salvarFuncionarios(
+      funcionarios.map((f) => {
+        if (f.id !== funcionarioId) return f;
+        const pagamentos = [...f.pagamentos];
+        pagamentos[index] = { ...pagamentos[index], [campo]: campo === "valor" ? (valor === "" ? "" : Number(valor)) : valor };
+        return { ...f, pagamentos };
+      })
+    );
+  };
+
+  const removerPagamentoFuncionario = (funcionarioId, index) => {
+    salvarFuncionarios(
+      funcionarios.map((f) => (f.id === funcionarioId ? { ...f, pagamentos: f.pagamentos.filter((_, i) => i !== index) } : f))
+    );
+  };
+
+  const adicionarDespesaGeral = () => {
+    if (!novaDespesaNome.trim() || novaDespesaValor === "") return;
+    salvarDespesasGerais([
+      ...despesasGerais,
+      {
+        id: uid(),
+        nome: novaDespesaNome.trim(),
+        mes: novaDespesaMes,
+        valor: Number(novaDespesaValor),
+        categoria: novaDespesaCategoria,
+        vencimento: novaDespesaVencimento || "",
+        pago: false,
+        dataPagamento: "",
+      },
+    ]);
+    setNovaDespesaNome("");
+    setNovaDespesaValor("");
+    setNovaDespesaVencimento("");
+  };
+
+  const marcarDespesaPaga = (id, pago, dataPagamento) => {
+    salvarDespesasGerais(despesasGerais.map((d) => (d.id === id ? { ...d, pago, dataPagamento: pago ? (dataPagamento || hoje()) : "" } : d)));
+  };
+
+  const removerDespesaGeral = (id) => {
+    salvarDespesasGerais(despesasGerais.filter((d) => d.id !== id));
+  };
+
+  const anoAtualFin = hoje().slice(0, 4);
 
   return (
     <div>
@@ -2482,7 +2625,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         <StatCard label="Faturado (total)" value={fmtBRL(total)} sub={receitaMensalRecorrente > 0 ? `inclui ${fmtBRL(receitaMensalRecorrente)} recorrente` : null} />
         <StatCard label="Recebido" value={fmtBRL(recebido)} accent="#566B4F" />
         <StatCard label="Em aberto" value={fmtBRL(aberto)} accent="#B9862E" onClick={() => setMostrarAberto(true)} />
-        <StatCard label="Despesas fixas (mês)" value={fmtBRL(totalDespesas)} accent="#A83B2E" />
+        <StatCard label="Despesas (total)" value={fmtBRL(totalDespesas)} accent="#A83B2E" />
         <StatCard label="Lucro estimado" value={fmtBRL(lucro)} accent={lucro >= 0 ? "#566B4F" : "#A83B2E"} />
         {receitaMensalRecorrente > 0 && (
           <StatCard
@@ -2568,7 +2711,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
           <thead>
             <tr style={{ textAlign: "left", borderBottom: "1px solid #E4D9C4" }}>
-              {["Mês", "Faturado", "Recebido", "Em aberto"].map((h) => (
+              {["Mês", "Faturado", "Recebido", "Em aberto", "Despesas", "Lucro"].map((h) => (
                 <th key={h} className="font-mono" style={{ padding: "10px 12px", color: "#8A7F6E", fontWeight: 500, fontSize: 11, textTransform: "uppercase" }}>
                   {h}
                 </th>
@@ -2577,11 +2720,13 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
           </thead>
           <tbody>
             {dadosMesFinanceiro.map((d) => (
-              <tr key={d.mes} style={{ borderBottom: "1px solid #F0E8D6", opacity: d.faturado === 0 ? 0.5 : 1 }}>
+              <tr key={d.mes} style={{ borderBottom: "1px solid #F0E8D6", opacity: d.faturado === 0 && d.despesas === 0 ? 0.5 : 1 }}>
                 <td style={{ padding: "9px 12px" }}>{d.mes}</td>
                 <td style={{ padding: "9px 12px", fontWeight: 600 }}>{fmtBRL(d.faturado)}</td>
                 <td style={{ padding: "9px 12px", color: "#566B4F" }}>{fmtBRL(d.recebido)}</td>
                 <td style={{ padding: "9px 12px", color: "#B9862E" }}>{fmtBRL(d.faturado - d.recebido)}</td>
+                <td style={{ padding: "9px 12px", color: "#A83B2E" }}>{fmtBRL(d.despesas)}</td>
+                <td style={{ padding: "9px 12px", fontWeight: 600, color: d.lucro >= 0 ? "#566B4F" : "#A83B2E" }}>{fmtBRL(d.lucro)}</td>
               </tr>
             ))}
             <tr>
@@ -2589,6 +2734,8 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
               <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.faturado, 0))}</td>
               <td style={{ padding: "10px 12px", fontWeight: 700, color: "#566B4F" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.recebido, 0))}</td>
               <td style={{ padding: "10px 12px", fontWeight: 700, color: "#B9862E" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + (d.faturado - d.recebido), 0))}</td>
+              <td style={{ padding: "10px 12px", fontWeight: 700, color: "#A83B2E" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.despesas, 0))}</td>
+              <td style={{ padding: "10px 12px", fontWeight: 700, color: "#566B4F" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.lucro, 0))}</td>
             </tr>
           </tbody>
         </table>
@@ -2805,32 +2952,161 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         </p>
       </Card>
 
-      <SectionTitle title="Despesas fixas mensais" />
-      <Card style={{ padding: 18, marginBottom: 26, maxWidth: 480 }}>
+      <SectionTitle title="Funcionários" />
+      <Card style={{ padding: 18, marginBottom: 26, maxWidth: 560 }}>
         <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
-          Custos fixos do estúdio, usados pra calcular o lucro estimado acima. Editáveis a qualquer momento.
+          Cadastre cada funcionário uma vez e vá lançando quanto pagou a cada mês — assim dá pra ver o total que cada um recebeu no ano.
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          {[
-            ["salario", "Salário"],
-            ["aluguel", "Aluguel"],
-            ["energia", "Energia"],
-            ["trafegoPago", "Tráfego pago"],
-            ["contador", "Contador"],
-            ["faxina", "Faxina"],
-            ["agua", "Água"],
-            ["internet", "Internet"],
-          ].map(([chave, label]) => (
-            <Field key={chave} label={label}>
-              <input
-                type="number"
-                style={inputStyle}
-                value={despesasFixas[chave] || 0}
-                onChange={(e) => salvarDespesasFixas({ ...despesasFixas, [chave]: Number(e.target.value) })}
-              />
-            </Field>
-          ))}
+
+        <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
+          {funcionarios.map((f) => {
+            const totalAno = (f.pagamentos || []).filter((p) => p.mes.startsWith(anoAtualFin)).reduce((s, p) => s + (Number(p.valor) || 0), 0);
+            const aberto = funcionarioAberto === f.id;
+            return (
+              <Card key={f.id} style={{ padding: "12px 14px" }}>
+                <div
+                  onClick={() => setFuncionarioAberto(aberto ? null : f.id)}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                >
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{f.nome}</div>
+                    <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E" }}>{fmtBRL(totalAno)} no ano {anoAtualFin}</div>
+                  </div>
+                  <span style={{ color: "#B0A388", fontSize: 12, transform: aberto ? "rotate(180deg)" : "none" }}>▾</span>
+                </div>
+
+                {aberto && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #EFE6D4" }}>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {(f.pagamentos || []).map((p, i) => (
+                        <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <input
+                            type="month"
+                            style={{ ...inputStyle, flex: 1 }}
+                            value={p.mes}
+                            onChange={(e) => mudarPagamentoFuncionario(f.id, i, "mes", e.target.value)}
+                          />
+                          <input
+                            type="number"
+                            style={{ ...inputStyle, flex: 1 }}
+                            placeholder="valor"
+                            value={p.valor}
+                            onChange={(e) => mudarPagamentoFuncionario(f.id, i, "valor", e.target.value)}
+                          />
+                          <button onClick={() => removerPagamentoFuncionario(f.id, i)} style={{ ...btnGhost, color: "#A83B2E", padding: "6px 9px" }}>×</button>
+                        </div>
+                      ))}
+                      {(f.pagamentos || []).length === 0 && <p style={{ fontSize: 12, color: "#8A7F6E", margin: 0 }}>Nenhum mês lançado ainda.</p>}
+                    </div>
+                    <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                      <button onClick={() => adicionarPagamentoFuncionario(f.id)} style={{ ...btnGhost, fontSize: 12.5 }}>+ Adicionar mês</button>
+                      <button onClick={() => removerFuncionario(f.id)} style={{ ...btnGhost, color: "#A83B2E", fontSize: 12.5, marginLeft: "auto" }}>Remover funcionário</button>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+          {funcionarios.length === 0 && <p style={{ fontSize: 12.5, color: "#8A7F6E", margin: 0 }}>Nenhum funcionário cadastrado ainda.</p>}
         </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <input style={inputStyle} placeholder="Nome do funcionário" value={novoFuncionarioNome} onChange={(e) => setNovoFuncionarioNome(e.target.value)} />
+          <button onClick={adicionarFuncionario} style={{ ...btnPrimario, marginTop: 0, flexShrink: 0 }}>+ Adicionar</button>
+        </div>
+      </Card>
+
+      <SectionTitle title="Despesas gerais" />
+      <Card style={{ padding: 18, marginBottom: 26, maxWidth: 620 }}>
+        <p style={{ fontSize: 12.5, color: "#8A7F6E", marginTop: 0 }}>
+          Uma planilha livre — lance nome, categoria, mês, valor, vencimento, e marque quando pagar.
+        </p>
+
+        <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+          {despesasGerais
+            .slice()
+            .sort((a, b) => (a.mes < b.mes ? 1 : (a.vencimento || "") < (b.vencimento || "") ? -1 : 1))
+            .map((d) => {
+              const vencida = !d.pago && d.vencimento && d.vencimento < hoje();
+              return (
+                <Card key={d.id} style={{ padding: "10px 14px", borderColor: vencida ? "#A83B2E" : undefined }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{d.nome} <span style={{ fontWeight: 400, color: "#7A2E22" }}>{fmtBRL(d.valor)}</span></div>
+                      <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", marginTop: 2 }}>
+                        {d.categoria || CATEGORIAS_DESPESA[4]} · mês {d.mes}
+                        {d.vencimento && <> · vence {fmtData(d.vencimento)}</>}
+                      </div>
+                    </div>
+                    <button onClick={() => removerDespesaGeral(d.id)} style={{ ...btnGhost, color: "#A83B2E", padding: "3px 9px", fontSize: 11.5 }}>Excluir</button>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+                    <select
+                      style={{ ...inputStyle, fontSize: 12, padding: "4px 8px", maxWidth: 170 }}
+                      value={d.categoria || CATEGORIAS_DESPESA[4]}
+                      onChange={(e) => salvarDespesasGerais(despesasGerais.map((dd) => (dd.id === d.id ? { ...dd, categoria: e.target.value } : dd)))}
+                    >
+                      {CATEGORIAS_DESPESA.map((c) => <option key={c}>{c}</option>)}
+                    </select>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, cursor: "pointer" }}>
+                      <input type="checkbox" checked={!!d.pago} onChange={(e) => marcarDespesaPaga(d.id, e.target.checked, d.dataPagamento)} />
+                      Pago
+                    </label>
+                    {d.pago ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                        em
+                        <input
+                          type="date"
+                          style={{ ...inputStyle, fontSize: 12, padding: "4px 8px", maxWidth: 150 }}
+                          value={d.dataPagamento || ""}
+                          onChange={(e) => marcarDespesaPaga(d.id, true, e.target.value)}
+                        />
+                      </span>
+                    ) : vencida ? (
+                      <Badge color="#A83B2E">vencida</Badge>
+                    ) : d.vencimento ? (
+                      <Badge color="#B9862E">a vencer</Badge>
+                    ) : null}
+                  </div>
+                </Card>
+              );
+            })}
+          {despesasGerais.length === 0 && (
+            <p style={{ fontSize: 12.5, color: "#8A7F6E", textAlign: "center", padding: 16, margin: 0 }}>Nenhuma despesa lançada ainda.</p>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input style={{ ...inputStyle, flex: 2, minWidth: 140 }} placeholder="Nome (ex.: Aluguel)" value={novaDespesaNome} onChange={(e) => setNovaDespesaNome(e.target.value)} />
+          <select style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={novaDespesaCategoria} onChange={(e) => setNovaDespesaCategoria(e.target.value)}>
+            {CATEGORIAS_DESPESA.map((c) => <option key={c}>{c}</option>)}
+          </select>
+          <input type="month" style={{ ...inputStyle, flex: 1, minWidth: 120 }} value={novaDespesaMes} onChange={(e) => setNovaDespesaMes(e.target.value)} />
+          <input type="number" style={{ ...inputStyle, flex: 1, minWidth: 100 }} placeholder="Valor" value={novaDespesaValor} onChange={(e) => setNovaDespesaValor(e.target.value)} />
+          <input type="date" style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={novaDespesaVencimento} onChange={(e) => setNovaDespesaVencimento(e.target.value)} />
+          <button onClick={adicionarDespesaGeral} style={{ ...btnPrimario, marginTop: 0, flexShrink: 0 }}>+ Adicionar</button>
+        </div>
+
+        {despesasGerais.length > 0 && (
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid #EFE6D4" }}>
+            <div className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+              Total por categoria
+            </div>
+            <div style={{ display: "grid", gap: 5 }}>
+              {CATEGORIAS_DESPESA.map((cat) => {
+                const totalCat = despesasGerais.filter((d) => (d.categoria || CATEGORIAS_DESPESA[4]) === cat).reduce((s, d) => s + (Number(d.valor) || 0), 0);
+                if (totalCat === 0) return null;
+                return (
+                  <div key={cat} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                    <span style={{ color: "#6B6153" }}>{cat}</span>
+                    <b>{fmtBRL(totalCat)}</b>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </Card>
 
       <SectionTitle title="Lançamentos" />
@@ -2890,6 +3166,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
 }
 
 const PUBLICO_OPCOES = ["Masculino", "Feminino", "Kids"];
+const CATEGORIAS_DESPESA = ["Salário", "Despesas básicas", "Contador", "Despesas operacional", "Gastos variados"];
 
 // ---------- CRM ----------
 const ALERTA_COR = {
@@ -3740,7 +4017,7 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
 }
 
 // ---------- Config ----------
-function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSheets, salvarWebhookSheets, statusSync, sincronizando, clientesCadastro, salvarClientesCadastro, producoes, salvarProducoes, segmentosDisponiveis, salvarSegmentosDisponiveis, modelos, salvarModelos, cenariosDisponiveis, salvarCenariosDisponiveis, registrarNotificacao }) {
+function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSheets, salvarWebhookSheets, statusSync, sincronizando, clientesCadastro, salvarClientesCadastro, producoes, salvarProducoes, segmentosDisponiveis, salvarSegmentosDisponiveis, modelos, salvarModelos, cenariosDisponiveis, salvarCenariosDisponiveis, registrarNotificacao, funcionarios, salvarFuncionarios, despesasGerais, salvarDespesasGerais }) {
   const [local, setLocal] = useState(precos);
   const [novoNome, setNovoNome] = useState("");
   const [novoPapel, setNovoPapel] = useState("equipe");
@@ -3781,6 +4058,8 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
       modelos,
       precos,
       segmentosDisponiveis,
+      funcionarios,
+      despesasGerais,
       perfis: perfis.map(({ pin, ...resto }) => resto),
     };
     const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
@@ -3817,6 +4096,8 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
     if (backupPendente.modelos) salvarModelos(backupPendente.modelos);
     if (backupPendente.precos) salvarPrecos(backupPendente.precos);
     if (backupPendente.segmentosDisponiveis) salvarSegmentosDisponiveis(backupPendente.segmentosDisponiveis);
+    if (backupPendente.funcionarios) salvarFuncionarios(backupPendente.funcionarios);
+    if (backupPendente.despesasGerais) salvarDespesasGerais(backupPendente.despesasGerais);
     setBackupPendente(null);
     setTimeout(() => setRestaurando(false), 600);
   };
