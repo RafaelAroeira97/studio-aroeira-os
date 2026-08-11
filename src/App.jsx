@@ -75,16 +75,19 @@ function pastaDrive(p) {
 }
 
 function totalProducao(p, precos) {
+  let bruto;
   if (p.valorFixo !== undefined && p.valorFixo !== null && p.valorFixo !== "") {
-    return Number(p.valorFixo) || 0;
+    bruto = Number(p.valorFixo) || 0;
+  } else {
+    bruto =
+      (Number(p.looks) || 0) * precos.look +
+      (Number(p.lookbooks) || 0) * precos.lookbook +
+      (Number(p.videos) || 0) * precos.video +
+      (Number(p.qtdPrato) || 0) * (precos.prato || 0) +
+      (Number(p.qtdFotoCorporativa) || 0) * (precos.fotoCorporativa || 0);
   }
-  return (
-    (Number(p.looks) || 0) * precos.look +
-    (Number(p.lookbooks) || 0) * precos.lookbook +
-    (Number(p.videos) || 0) * precos.video +
-    (Number(p.qtdPrato) || 0) * (precos.prato || 0) +
-    (Number(p.qtdFotoCorporativa) || 0) * (precos.fotoCorporativa || 0)
-  );
+  const desconto = Number(p.desconto) || 0;
+  return Math.max(0, bruto - desconto);
 }
 
 // retorna a lista de mensalidades de um cliente, com fallback pro formato antigo (valorMensal único)
@@ -695,6 +698,7 @@ export default function StudioAroeiraOS() {
       whatsapp: "",
       instagram: "",
       linkDrive: "",
+      chavePix: "",
       responsavelNome: "",
       responsavelParentesco: "",
     });
@@ -792,6 +796,7 @@ export default function StudioAroeiraOS() {
       statusVideo: "Agendado",
       pagamentoStatus: "Em aberto",
       valorPago: 0,
+      desconto: 0,
       repetir: false,
       repetirAte: "",
     });
@@ -808,6 +813,7 @@ export default function StudioAroeiraOS() {
       statusVideo: "Agendado",
       pagamentoStatus: "Em aberto",
       valorPago: 0,
+      desconto: 0,
       linkDrive: "",
       repetir: false,
       repetirAte: "",
@@ -970,6 +976,8 @@ export default function StudioAroeiraOS() {
           statusRecorrente: cadastro.statusRecorrente || "Em aberto",
           clienteMensal: cadastro.clienteMensal || cadastro.apenasMensal || false,
           mensalidades: cadastro.mensalidades || [],
+          interacoes: cadastro.interacoes || [],
+          proximoContato: cadastro.proximoContato || null,
           observacoes: cadastro.observacoes || "",
           alerta,
         };
@@ -1222,6 +1230,7 @@ export default function StudioAroeiraOS() {
             segmentosDisponiveis={segmentosDisponiveis}
             producoes={producoes}
             salvarProducoes={salvarProducoes}
+            usuario={usuario}
           />
         )}
         {isAdmin && tab === "modelos" && (
@@ -1817,20 +1826,13 @@ function SectionTitle({ title }) {
 function Quadro({ producoes, onStatusChange, onStatusVideoChange }) {
   const [aberto, setAberto] = useState(null);
 
-  const inicioSemana = new Date();
-  inicioSemana.setDate(inicioSemana.getDate() - inicioSemana.getDay());
-  const isoInicioSemana = inicioSemana.toISOString().slice(0, 10);
-  const fimSemana = new Date(inicioSemana);
-  fimSemana.setDate(fimSemana.getDate() + 6);
-  const isoFimSemana = fimSemana.toISOString().slice(0, 10);
-
   const ordenadas = producoes
-    .filter((p) => p.data >= isoInicioSemana && p.data <= isoFimSemana && !producaoConcluida(p))
+    .filter((p) => !producaoConcluida(p))
     .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1));
 
   return (
     <div>
-      <SectionTitle title="Panorama geral — ensaios desta semana" />
+      <SectionTitle title="Panorama geral — tudo que está pendente" />
       <div style={{ display: "grid", gap: 10 }}>
         {ordenadas.map((p) => {
           const expandido = aberto === p.id;
@@ -1971,7 +1973,7 @@ function Quadro({ producoes, onStatusChange, onStatusVideoChange }) {
         })}
         {ordenadas.length === 0 && (
           <Card style={{ padding: 28, textAlign: "center", color: "#8A7F6E" }}>
-            Nenhum ensaio agendado pra essa semana (ou já foram todos finalizados 🎉).
+            Nada pendente no momento — tudo aprovado 🎉
           </Card>
         )}
       </div>
@@ -2204,7 +2206,14 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
                       )}
                     </span>
                     {isAdmin && (
-                      <span className="font-display" style={{ color: "#7A2E22", fontWeight: 600 }}>{fmtBRL(totalProducao(p, precos))}</span>
+                      <span className="font-display" style={{ color: "#7A2E22", fontWeight: 600 }}>
+                        {fmtBRL(totalProducao(p, precos))}
+                        {Number(p.desconto) > 0 && (
+                          <span className="font-mono" style={{ fontSize: 10.5, color: "#B9862E", fontWeight: 500, marginLeft: 6 }}>
+                            (desconto de {fmtBRL(p.desconto)} já aplicado)
+                          </span>
+                        )}
+                      </span>
                     )}
                   </div>
 
@@ -2891,7 +2900,7 @@ const ALERTA_COR = {
   "Prospect": "#8A7F6E",
 };
 
-function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segmentosDisponiveis, producoes, salvarProducoes }) {
+function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segmentosDisponiveis, producoes, salvarProducoes, usuario }) {
   const [detalheNome, setDetalheNome] = useState(null);
   const [editandoContato, setEditandoContato] = useState(null); // {nome, telefone, email, instagram, observacoes}
   const [filtroAlerta, setFiltroAlerta] = useState(null);
@@ -2900,6 +2909,11 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
   const [filtroSegmento, setFiltroSegmento] = useState("");
   const [unificarAberto, setUnificarAberto] = useState(false);
   const [excluindoCliente, setExcluindoCliente] = useState(null);
+  const [registrandoContato, setRegistrandoContato] = useState(false);
+  const [tipoContato, setTipoContato] = useState("WhatsApp");
+  const [notaContato, setNotaContato] = useState("");
+  const [lembreteContato, setLembreteContato] = useState("");
+  const [mostrarFollowUps, setMostrarFollowUps] = useState(false);
   const [selecionadosUnificar, setSelecionadosUnificar] = useState([]);
   const [principalUnificar, setPrincipalUnificar] = useState("");
   const [confirmandoUnificar, setConfirmandoUnificar] = useState(false);
@@ -2959,6 +2973,35 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
     setExcluindoCliente(null);
     setDetalheNome(null);
   };
+
+  const registrarContato = () => {
+    if (!notaContato.trim() || !clienteDetalhe) return;
+    const nova = { id: uid(), data: hoje(), tipo: tipoContato, nota: notaContato.trim(), por: usuario?.nome || "alguém" };
+    const cadastroAtual = clientesCadastro.find((c) => c.nome === clienteDetalhe.nome);
+    const base = cadastroAtual || { nome: clienteDetalhe.nome };
+    const atualizado = {
+      ...base,
+      interacoes: [...(base.interacoes || []), nova],
+      proximoContato: lembreteContato ? lembreteContato : base.proximoContato || null,
+    };
+    const existe = clientesCadastro.some((c) => c.nome === clienteDetalhe.nome);
+    salvarClientesCadastro(
+      existe ? clientesCadastro.map((c) => (c.nome === clienteDetalhe.nome ? atualizado : c)) : [...clientesCadastro, atualizado]
+    );
+    setNotaContato("");
+    setLembreteContato("");
+    setTipoContato("WhatsApp");
+    setRegistrandoContato(false);
+  };
+
+  const limparLembrete = () => {
+    if (!clienteDetalhe) return;
+    salvarClientesCadastro(
+      clientesCadastro.map((c) => (c.nome === clienteDetalhe.nome ? { ...c, proximoContato: null } : c))
+    );
+  };
+
+  const followUpsPendentes = clientes.filter((c) => c.proximoContato && c.proximoContato <= hoje());
 
   // ---- unificar clientes ----
   const todosOsNomes = Array.from(
@@ -3109,6 +3152,9 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
         <StatCard label="Renovar contato" value={clientes.filter((c) => c.alerta === "Renovar contato").length} accent="#B9862E" onClick={() => setFiltroAlerta("Renovar contato")} />
         <StatCard label="Frio" value={clientes.filter((c) => c.alerta === "Frio").length} accent="#3E6B8A" onClick={() => setFiltroAlerta("Frio")} />
         <StatCard label="Perdidos" value={clientes.filter((c) => c.alerta === "Perdidos").length} accent="#A83B2E" onClick={() => setFiltroAlerta("Perdidos")} />
+        {followUpsPendentes.length > 0 && (
+          <StatCard label="Follow-ups pendentes" value={followUpsPendentes.length} accent="#7A2E22" onClick={() => setMostrarFollowUps(true)} />
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", marginBottom: 10, gap: 10 }}>
@@ -3178,6 +3224,11 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
                     </span>
                   );
                 })()}
+                {c.proximoContato && c.proximoContato <= hoje() && (
+                  <span className="font-mono" style={{ fontSize: 10, color: "#A83B2E", background: "#F4DDD3", padding: "2px 8px", borderRadius: 999, fontWeight: 700 }}>
+                    📞 follow-up
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 12.5, color: "#8A7F6E" }}>
                 {c.qtd} produção(ões){c.ultima ? ` · última em ${fmtData(c.ultima)} · ` : " · nenhuma produção ainda"}
@@ -3267,6 +3318,45 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
 
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
               <button onClick={() => setFiltroAlerta(null)} style={btnGhost}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mostrarFollowUps && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }}
+          onClick={() => setMostrarFollowUps(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%", maxHeight: "82vh", overflowY: "auto" }}>
+            <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0, marginBottom: 14 }}>📞 Follow-ups pendentes</h3>
+            <div style={{ display: "grid", gap: 6 }}>
+              {followUpsPendentes
+                .sort((a, b) => a.proximoContato < b.proximoContato ? -1 : 1)
+                .map((c) => {
+                  const ultimaInteracao = (c.interacoes || [])[c.interacoes.length - 1];
+                  return (
+                    <button
+                      key={c.nome}
+                      onClick={() => { setMostrarFollowUps(false); setDetalheNome(c.nome); }}
+                      style={{ display: "flex", flexDirection: "column", gap: 2, padding: "9px 12px", borderRadius: 8, border: "1px solid #E4D9C4", background: "transparent", cursor: "pointer", textAlign: "left" }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 13.5, fontWeight: 600 }}>{c.nome}</span>
+                        <span className="font-mono" style={{ fontSize: 11, color: c.proximoContato < hoje() ? "#A83B2E" : "#B9862E" }}>
+                          {c.proximoContato < hoje() ? "atrasado" : "hoje"} · {fmtData(c.proximoContato)}
+                        </span>
+                      </div>
+                      {ultimaInteracao && <span style={{ fontSize: 12, color: "#8A7F6E" }}>última nota: {ultimaInteracao.nota}</span>}
+                    </button>
+                  );
+                })}
+              {followUpsPendentes.length === 0 && (
+                <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center", padding: 16 }}>Nada pendente 🎉</p>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setMostrarFollowUps(false)} style={btnGhost}>Fechar</button>
             </div>
           </div>
         </div>
@@ -3376,6 +3466,62 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
                 </div>
               </>
             )}
+
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+              <SectionTitle title="📞 Histórico de contato" />
+              <button onClick={() => setRegistrandoContato(true)} style={{ ...btnPrimario, marginLeft: "auto", marginTop: 0 }}>+ Registrar contato</button>
+            </div>
+
+            {clienteDetalhe.proximoContato && (
+              <Card style={{ padding: "10px 14px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", borderColor: clienteDetalhe.proximoContato <= hoje() ? "#A83B2E" : "#B9862E" }}>
+                <span style={{ fontSize: 13 }}>
+                  ⏰ Lembrete: contatar em <b>{fmtData(clienteDetalhe.proximoContato)}</b>
+                  {clienteDetalhe.proximoContato <= hoje() && <span style={{ color: "#A83B2E", fontWeight: 600 }}> (pendente)</span>}
+                </span>
+                <button onClick={limparLembrete} style={{ ...btnGhost, padding: "3px 9px", fontSize: 11.5 }}>Limpar</button>
+              </Card>
+            )}
+
+            {registrandoContato && (
+              <Card style={{ padding: 14, marginBottom: 12 }}>
+                <div style={{ display: "grid", gap: 10 }}>
+                  <Field label="Tipo de contato">
+                    <select style={inputStyle} value={tipoContato} onChange={(e) => setTipoContato(e.target.value)}>
+                      <option>WhatsApp</option>
+                      <option>Ligação</option>
+                      <option>E-mail</option>
+                      <option>Presencial</option>
+                      <option>Outro</option>
+                    </select>
+                  </Field>
+                  <Field label="O que foi conversado">
+                    <textarea rows={2} style={{ ...inputStyle, resize: "vertical" }} value={notaContato} onChange={(e) => setNotaContato(e.target.value)} placeholder="ex.: disse que vai fechar semana que vem" />
+                  </Field>
+                  <Field label="Lembrar de contatar de novo em (opcional)">
+                    <input type="date" style={inputStyle} value={lembreteContato} onChange={(e) => setLembreteContato(e.target.value)} />
+                  </Field>
+                </div>
+                <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
+                  <button onClick={() => { setRegistrandoContato(false); setNotaContato(""); setLembreteContato(""); }} style={btnGhost}>Cancelar</button>
+                  <button onClick={registrarContato} style={btnPrimario}>Salvar</button>
+                </div>
+              </Card>
+            )}
+
+            <div style={{ display: "grid", gap: 6, marginBottom: 20 }}>
+              {[...(clienteDetalhe.interacoes || [])].reverse().map((i) => (
+                <Card key={i.id} style={{ padding: "9px 12px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#8A7F6E" }}>
+                    <span>{i.tipo} · {fmtData(i.data)}</span>
+                    <span>{i.por}</span>
+                  </div>
+                  <div style={{ fontSize: 13, marginTop: 3 }}>{i.nota}</div>
+                </Card>
+              ))}
+              {(!clienteDetalhe.interacoes || clienteDetalhe.interacoes.length === 0) && (
+                <p style={{ fontSize: 12.5, color: "#8A7F6E", margin: 0 }}>Nenhum contato registrado ainda.</p>
+              )}
+            </div>
 
             <SectionTitle title="Histórico de produções" />
             <div style={{ display: "grid", gap: 8 }}>
@@ -5069,6 +5215,12 @@ function CartaoModelo({ modelo, onEditar, onExcluir }) {
                 <BotaoCopiar texto={modelo.linkDrive} />
               </span>
             )}
+            {modelo.chavePix && (
+              <span style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                <span style={{ color: "#566B4F" }}>💰 PIX: {modelo.chavePix}</span>
+                <BotaoCopiar texto={modelo.chavePix} />
+              </span>
+            )}
           </div>
         )}
 
@@ -5123,6 +5275,7 @@ function Modelos({ modelos, onNovo, onEditar, onExcluir, producoes, salvarModelo
       whatsapp: "",
       instagram: "",
       linkDrive: "",
+      chavePix: "",
       responsavelNome: "",
       responsavelParentesco: "",
     }));
@@ -5391,6 +5544,9 @@ function ModalModelo({ modelo, setModelo, onSalvar, onFechar }) {
           </Field>
           <Field label="Link da pasta no Drive">
             <input style={inputStyle} placeholder="https://drive.google.com/…" value={m.linkDrive || ""} onChange={set("linkDrive")} />
+          </Field>
+          <Field label="Chave PIX">
+            <input style={inputStyle} placeholder="CPF, e-mail, telefone ou chave aleatória" value={m.chavePix || ""} onChange={set("chavePix")} />
           </Field>
 
           <Field label="Informações especiais">
@@ -5807,6 +5963,12 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
             <select style={inputStyle} value={p.pagamentoStatus} onChange={set("pagamentoStatus")}>
               {STATUS_PAGAMENTO.map((s) => <option key={s}>{s}</option>)}
             </select>
+          </Field>
+          <Field label="Desconto aplicado (R$)">
+            <input type="number" style={inputStyle} value={p.desconto || 0} onChange={setNum("desconto")} placeholder="0" />
+            <p style={{ fontSize: 11, color: "#8A7F6E", margin: "4px 0 0" }}>
+              Pra volume alto ou negociação — abate direto do valor total calculado.
+            </p>
           </Field>
         </div>
         )}
