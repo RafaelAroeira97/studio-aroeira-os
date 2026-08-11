@@ -6114,10 +6114,16 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
             </div>
           )}
           <Field label="Tipo de produção">
-            <select style={inputStyle} value={p.tipo} onChange={(e) => setProducao({ ...p, tipo: e.target.value, temVideo: e.target.value === "Foto e vídeo" })}>
+            <select
+              style={inputStyle}
+              value={p.tipo}
+              onChange={(e) => setProducao({ ...p, tipo: e.target.value, temVideo: ["Vídeo", "Foto e vídeo", "Reels"].includes(e.target.value) })}
+            >
               <option value="">— selecione —</option>
               <option value="Foto">Foto</option>
+              <option value="Vídeo">Vídeo</option>
               <option value="Foto e vídeo">Foto e vídeo</option>
+              <option value="Reels">Reels</option>
             </select>
           </Field>
           <Field label="Segmento">
@@ -6238,9 +6244,9 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
             <input
               type="checkbox"
               checked={!!p.temVideo}
-              onChange={(e) => setProducao({ ...p, temVideo: e.target.checked, tipo: e.target.checked ? "Foto e vídeo" : "Foto" })}
+              onChange={(e) => setProducao({ ...p, temVideo: e.target.checked })}
             />
-            Esta produção tem vídeo?
+            Esta produção tem vídeo? <span style={{ color: "#8A7F6E", fontWeight: 400 }}>(já marcado sozinho conforme o tipo de produção acima)</span>
           </label>
           {p.temVideo && (
             <>
