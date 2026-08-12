@@ -42,6 +42,16 @@ function dataConclusao(p) {
   return new Date(em).toISOString().slice(0, 10);
 }
 
+// descreve o status real de uma produção, deixando claro o que ainda falta quando ela tem foto e vídeo
+function statusDescritivo(p) {
+  if (!p.temVideo) return p.status;
+  if (producaoConcluida(p)) return p.status;
+  const partes = [];
+  if (p.status !== STATUS_CONCLUIDO) partes.push(`Foto: ${p.status}`);
+  if ((p.statusVideo || "Agendado") !== STATUS_CONCLUIDO) partes.push(`Vídeo: ${p.statusVideo || "Agendado"}`);
+  return partes.join(" · ") || p.status;
+}
+
 const STATUS_PAGAMENTO = ["Em aberto", "Pago", "Parcialmente pago", "Cancelado"];
 
 const PRECOS_PADRAO = { look: 40, lookbook: 150, video: 50, prato: 50, fotoCorporativa: 50 };
@@ -1491,7 +1501,7 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
     lista
       .slice()
       .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1))
-      .map((p) => [p.cliente, fmtData(p.data), p.horario || "—", p.status]);
+      .map((p) => [p.cliente, fmtData(p.data), p.horario || "—", statusDescritivo(p)]);
 
   const aprovadas = producoes.filter(producaoConcluida);
   const prazosEntrega = aprovadas
@@ -1846,7 +1856,7 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
     lista
       .slice()
       .sort((a, b) => (a.data < b.data ? 1 : -1))
-      .map((p) => [p.cliente, fmtData(p.data), p.horario || "—", p.status]);
+      .map((p) => [p.cliente, fmtData(p.data), p.horario || "—", statusDescritivo(p)]);
 
   // produtividade da equipe
   const nomesEquipe = Array.from(
@@ -1879,7 +1889,7 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
               linhas: entregasPendentesTodas
                 .slice()
                 .sort((a, b) => (a.prazo < b.prazo ? -1 : 1))
-                .map((p) => [p.cliente, fmtData(p.data), p.prazo ? fmtData(p.prazo) : "—", p.status]),
+                .map((p) => [p.cliente, fmtData(p.data), p.prazo ? fmtData(p.prazo) : "—", statusDescritivo(p)]),
             })
           }
         >
