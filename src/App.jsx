@@ -1791,8 +1791,11 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
   const entregasPendentesTodas = producoes.filter((p) => p.data <= t && !producaoConcluida(p));
   const entregasPendentesHoje = entregasPendentesTodas.filter((p) => p.prazo === t);
   const atrasadas = entregasPendentesTodas.filter((p) => p.prazo < t);
-  const pagamentosPendentes = producoes.filter((p) => ["Em aberto", "Parcialmente pago"].includes(p.pagamentoStatus));
-  const pagamentosConcluidos = producoes.filter((p) => p.pagamentoStatus === "Pago");
+  const clientesMensaisSet = new Set(clientes.filter((c) => c.clienteMensal || c.apenasMensal).map((c) => c.nome));
+  const pagamentosPendentes = producoes.filter(
+    (p) => p.data <= t && !clientesMensaisSet.has(p.cliente) && ["Em aberto", "Parcialmente pago"].includes(p.pagamentoStatus)
+  );
+  const pagamentosConcluidos = producoes.filter((p) => !clientesMensaisSet.has(p.cliente) && p.pagamentoStatus === "Pago");
 
   const inicioSemana = new Date();
   inicioSemana.setDate(inicioSemana.getDate() - inicioSemana.getDay());
