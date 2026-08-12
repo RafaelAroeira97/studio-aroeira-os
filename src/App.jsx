@@ -816,6 +816,7 @@ export default function StudioAroeiraOS() {
       observacoes: "",
       referencias: "",
       prazo: hoje(),
+      prazoHorario: "",
       fotografo: "",
       filmmaker: "",
       editor: "",
@@ -1519,7 +1520,7 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
           </div>
           {proximoEnsaio.prazo && (
             <div className="font-mono" style={{ fontSize: 12.5, fontWeight: 700, color: "#7A2E22", marginTop: 6 }}>
-              📦 Prazo de entrega: {fmtData(proximoEnsaio.prazo)}
+              📦 Prazo de entrega: {fmtData(proximoEnsaio.prazo)}{proximoEnsaio.prazoHorario && ` às ${proximoEnsaio.prazoHorario}`}
             </div>
           )}
           <button onClick={() => setAvisando(proximoEnsaio)} style={{ ...btnGhost, marginTop: 10, color: "#A83B2E" }}>
@@ -1906,7 +1907,7 @@ function Quadro({ producoes, onStatusChange, onStatusVideoChange }) {
                       className="font-mono"
                       style={{ fontSize: 11, fontWeight: 700, marginTop: 2, color: !producaoConcluida(p) && p.prazo < hoje() ? "#A83B2E" : "#7A2E22" }}
                     >
-                      📦 entrega {fmtData(p.prazo)}
+                      📦 entrega {fmtData(p.prazo)}{p.prazoHorario && ` às ${p.prazoHorario}`}
                     </div>
                   )}
                   {ultimaAlteracao && (
@@ -2179,7 +2180,7 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
                         color: !producaoConcluida(p) && p.prazo < hoje() ? "#A83B2E" : "#7A2E22",
                       }}
                     >
-                      📦 Entrega: {fmtData(p.prazo)}
+                      📦 Entrega: {fmtData(p.prazo)}{p.prazoHorario && ` às ${p.prazoHorario}`}
                       {!producaoConcluida(p) && p.prazo < hoje() && " — atrasada"}
                     </div>
                   )}
@@ -6009,6 +6010,7 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
           <Field label="Data"><input type="date" style={inputStyle} value={p.data} onChange={set("data")} /></Field>
           <Field label="Horário"><input type="time" style={inputStyle} value={p.horario} onChange={set("horario")} /></Field>
           <Field label="Prazo de entrega"><input type="date" style={inputStyle} value={p.prazo} onChange={set("prazo")} /></Field>
+          <Field label="Horário de entrega (opcional)"><input type="time" style={inputStyle} value={p.prazoHorario || ""} onChange={set("prazoHorario")} /></Field>
         </div>
 
         <button
