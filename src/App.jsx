@@ -6196,6 +6196,15 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
             <datalist id="lista-clientes-producao">
               {(clientesCadastro || []).map((c) => <option key={c.nome} value={c.nome} />)}
             </datalist>
+            {(() => {
+              const cadastroCliente = (clientesCadastro || []).find((c) => c.nome === p.cliente);
+              if (!cadastroCliente || !(cadastroCliente.clienteMensal || cadastroCliente.apenasMensal)) return null;
+              return (
+                <p style={{ fontSize: 11.5, color: "#566B4F", background: "#E7EEE3", padding: "5px 10px", borderRadius: 8, marginTop: 6 }}>
+                  💰 Cliente mensal fixo — este ensaio não é cobrado avulso, já entra na mensalidade dela.
+                </p>
+              );
+            })()}
           </Field>
           <Field label="Fotógrafo">
             <CampoResponsavel capacidade="Fotógrafo" valor={p.fotografo} onChange={(v) => setProducao({ ...p, fotografo: v })} perfis={perfis} />
@@ -6472,6 +6481,15 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
             <select style={inputStyle} value={p.pagamentoStatus} onChange={set("pagamentoStatus")}>
               {STATUS_PAGAMENTO.map((s) => <option key={s}>{s}</option>)}
             </select>
+            {(() => {
+              const cadastroCliente = (clientesCadastro || []).find((c) => c.nome === p.cliente);
+              if (!cadastroCliente || !(cadastroCliente.clienteMensal || cadastroCliente.apenasMensal)) return null;
+              return (
+                <p style={{ fontSize: 11, color: "#8A7F6E", margin: "4px 0 0" }}>
+                  Não afeta o financeiro — cliente mensal, quem controla pago/em aberto é a mensalidade no cadastro dela.
+                </p>
+              );
+            })()}
           </Field>
           <Field label="Desconto aplicado (R$)">
             <input type="number" style={inputStyle} value={p.desconto || 0} onChange={setNum("desconto")} placeholder="0" />
