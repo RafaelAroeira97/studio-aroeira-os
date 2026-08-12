@@ -1490,7 +1490,7 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
   const isoFimSemana = fimSemana.toISOString().slice(0, 10);
 
   const semana = producoes.filter((p) => p.data >= isoSemana && p.data <= isoFimSemana);
-  const entregasPendentes = producoes.filter((p) => !["Entregue ao cliente", "Aprovado"].includes(p.status) && p.prazo <= t);
+  const entregasPendentes = producoes.filter((p) => !producaoConcluida(p) && p.prazo <= t);
 
   const agora = new Date();
   const proximoEnsaio = producoes
@@ -1788,7 +1788,7 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
   const [anoSelecionado, setAnoSelecionado] = useState(t.slice(0, 4));
 
   const doDia = producoes.filter((p) => p.data === t);
-  const entregasPendentesTodas = producoes.filter((p) => !producaoConcluida(p));
+  const entregasPendentesTodas = producoes.filter((p) => p.data <= t && !producaoConcluida(p));
   const entregasPendentesHoje = entregasPendentesTodas.filter((p) => p.prazo === t);
   const atrasadas = entregasPendentesTodas.filter((p) => p.prazo < t);
   const pagamentosPendentes = producoes.filter((p) => ["Em aberto", "Parcialmente pago"].includes(p.pagamentoStatus));
