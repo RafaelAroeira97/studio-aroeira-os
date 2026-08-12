@@ -1224,6 +1224,7 @@ export default function StudioAroeiraOS() {
 
       <main style={{ flex: 1, padding: "18px 16px calc(env(safe-area-inset-bottom, 0px) + 96px)", maxWidth: 1180, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
         {isAdmin && tab === "dashboard" && <Dashboard producoes={producoes} precos={precos} clientes={clientes} historicoFinanceiro={historicoFinanceiro} />}
+        {isAdmin && tab === "calendario" && <Calendario producoes={producoes} onEditar={editarProducao} />}
         {tab === "quadro" && <Quadro producoes={isAdmin ? producoes : minhasProducoes} onStatusChange={mudarStatus} onStatusVideoChange={mudarStatusVideo} />}
         {!isAdmin && tab === "painel" && <PainelEquipe producoes={minhasProducoes} usuario={usuario} onAvisarProblema={sinalizarProblema} />}
         {tab === "producoes" && (
@@ -1386,6 +1387,7 @@ export default function StudioAroeiraOS() {
         {(isAdmin
           ? [
               ["dashboard", "📊", "Painel"],
+              ["calendario", "📅", "Calendário"],
               ["quadro", "🗂️", "Quadro"],
               ["producoes", "🎬", "Produções"],
               ["financeiro", "💰", "Financeiro"],
@@ -1529,6 +1531,40 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
         </Card>
       )}
 
+      <SectionTitle title="Sua semana" />
+      <div style={{ display: "grid", gap: 8, marginBottom: 26 }}>
+        {Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(inicioSemana);
+          d.setDate(d.getDate() + i);
+          const iso = d.toISOString().slice(0, 10);
+          const doDia = producoes.filter((p) => p.data === iso).sort((a, b) => (a.horario < b.horario ? -1 : 1));
+          const ehHoje = iso === t;
+          const nomeDia = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"][d.getDay()];
+          return (
+            <Card key={iso} style={{ padding: "10px 14px", borderColor: ehHoje ? "#7A2E22" : undefined }}>
+              <div className="font-mono" style={{ fontSize: 10.5, color: ehHoje ? "#7A2E22" : "#8A7F6E", fontWeight: ehHoje ? 700 : 500, textTransform: "uppercase", marginBottom: doDia.length ? 6 : 0 }}>
+                {nomeDia} · {fmtData(iso)}{ehHoje && " · hoje"}
+              </div>
+              {doDia.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: "#B0A388" }}>Sem ensaio</div>
+              ) : (
+                <div style={{ display: "grid", gap: 6 }}>
+                  {doDia.map((p) => (
+                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, flexWrap: "wrap", gap: 4 }}>
+                      <span>
+                        <b>{p.horario}</b> · {p.cliente}
+                        {p.localizacao && <span style={{ color: "#8A7F6E" }}> · 📍 {p.localizacao}</span>}
+                      </span>
+                      <Badge color={STATUS_COR[p.status] || "#8A7F6E"}>{p.status}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px,1fr))", gap: 12, marginBottom: 26 }}>
         <StatCard
           label="Ensaios da semana"
@@ -1606,6 +1642,131 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
   );
 }
 
+// ---------- Calendário (administração) ----------
+function Calendario({ producoes, onEditar }) {
+  const hoje0 = hoje();
+  const [mesAtual, setMesAtual] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const [diaSelecionado, setDiaSelecionado] = useState(null);
+
+  const ano = mesAtual.getFullYear();
+  const mes = mesAtual.getMonth();
+  const primeiroDiaSemana = new Date(ano, mes, 1).getDay();
+  const totalDias = new Date(ano, mes + 1, 0).getDate();
+  const pad2 = (n) => String(n).padStart(2, "0");
+
+  const mapaPorDia = {};
+  producoes.forEach((p) => {
+    if (!p.data) return;
+    if (!mapaPorDia[p.data]) mapaPorDia[p.data] = [];
+    mapaPorDia[p.data].push(p);
+  });
+
+  const celulas = [];
+  for (let i = 0; i < primeiroDiaSemana; i++) celulas.push(null);
+  for (let dia = 1; dia <= totalDias; dia++) celulas.push(`${ano}-${pad2(mes + 1)}-${pad2(dia)}`);
+
+  const nomesMeses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  const producoesDoDia = diaSelecionado ? (mapaPorDia[diaSelecionado] || []).sort((a, b) => (a.horario < b.horario ? -1 : 1)) : [];
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <SectionTitle title={`${nomesMeses[mes]} ${ano}`} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setMesAtual(new Date(ano, mes - 1, 1))} style={btnGhost}>← Anterior</button>
+          <button onClick={() => setMesAtual(new Date(new Date().getFullYear(), new Date().getMonth(), 1))} style={btnGhost}>Hoje</button>
+          <button onClick={() => setMesAtual(new Date(ano, mes + 1, 1))} style={btnGhost}>Próximo →</button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 6 }}>
+        {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => (
+          <div key={d} className="font-mono" style={{ textAlign: "center", fontSize: 10.5, color: "#8A7F6E", padding: "4px 0" }}>{d}</div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 24 }}>
+        {celulas.map((iso, i) => {
+          if (!iso) return <div key={i} />;
+          const doDia = mapaPorDia[iso] || [];
+          const pendentesDoDia = doDia.filter((p) => !producaoConcluida(p));
+          const ehHoje = iso === hoje0;
+          return (
+            <button
+              key={iso}
+              onClick={() => doDia.length > 0 && setDiaSelecionado(iso)}
+              style={{
+                aspectRatio: "1",
+                borderRadius: 10,
+                border: "1px solid " + (ehHoje ? "#7A2E22" : "#E4D9C4"),
+                background: ehHoje ? "#F8F3E8" : "#FFFDF9",
+                cursor: doDia.length > 0 ? "pointer" : "default",
+                padding: 4,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "flex-start",
+                gap: 2,
+              }}
+            >
+              <span className="font-mono" style={{ fontSize: 11, color: ehHoje ? "#7A2E22" : "#6B6153", fontWeight: ehHoje ? 700 : 500 }}>
+                {Number(iso.slice(8, 10))}
+              </span>
+              {doDia.length > 0 && (
+                <span
+                  className="font-mono"
+                  style={{
+                    fontSize: 9.5,
+                    fontWeight: 700,
+                    color: "#FBF4E9",
+                    background: pendentesDoDia.length > 0 ? "#B9862E" : "#566B4F",
+                    borderRadius: 999,
+                    padding: "1px 6px",
+                  }}
+                >
+                  {doDia.length}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {diaSelecionado && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setDiaSelecionado(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%", maxHeight: "82vh", overflowY: "auto" }}>
+            <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0, marginBottom: 14 }}>{fmtData(diaSelecionado)}</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              {producoesDoDia.map((p) => (
+                <Card
+                  key={p.id}
+                  onClick={() => { onEditar(p); setDiaSelecionado(null); }}
+                  style={{ padding: "10px 12px", cursor: "pointer" }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 600 }}>{p.cliente}</span>
+                    <span className="font-mono" style={{ fontSize: 11.5, color: "#8A7F6E" }}>{p.horario}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#8A7F6E", marginTop: 2 }}>
+                    {p.modelo && <>{p.modelo} · </>}
+                    <span style={{ color: STATUS_COR[p.status] || "#8A7F6E" }}>{p.status}</span>
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setDiaSelecionado(null)} style={btnGhost}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
   const t = hoje();
   const [abertoSemana, setAbertoSemana] = useState(false);
@@ -1617,7 +1778,7 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
   const [anoSelecionado, setAnoSelecionado] = useState(t.slice(0, 4));
 
   const doDia = producoes.filter((p) => p.data === t);
-  const entregasPendentesTodas = producoes.filter((p) => !["Entregue ao cliente", "Aprovado"].includes(p.status));
+  const entregasPendentesTodas = producoes.filter((p) => !producaoConcluida(p));
   const entregasPendentesHoje = entregasPendentesTodas.filter((p) => p.prazo === t);
   const atrasadas = entregasPendentesTodas.filter((p) => p.prazo < t);
   const pagamentosPendentes = producoes.filter((p) => ["Em aberto", "Parcialmente pago"].includes(p.pagamentoStatus));
@@ -1708,6 +1869,28 @@ function Dashboard({ producoes, precos, clientes, historicoFinanceiro }) {
 
   return (
     <div>
+      {entregasPendentesTodas.length > 0 && (
+        <Card
+          style={{ padding: "14px 18px", marginBottom: 20, borderColor: "#B9862E", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, cursor: "pointer" }}
+          onClick={() =>
+            setDetalhe({
+              titulo: "Todas as entregas pendentes",
+              colunas: ["Marca", "Data", "Prazo", "Status"],
+              linhas: entregasPendentesTodas
+                .slice()
+                .sort((a, b) => (a.prazo < b.prazo ? -1 : 1))
+                .map((p) => [p.cliente, fmtData(p.data), p.prazo ? fmtData(p.prazo) : "—", p.status]),
+            })
+          }
+        >
+          <span style={{ fontSize: 14 }}>
+            📦 <b>{entregasPendentesTodas.length}</b> entrega{entregasPendentesTodas.length === 1 ? "" : "s"} pendente{entregasPendentesTodas.length === 1 ? "" : "s"} no total
+            {atrasadas.length > 0 && <span style={{ color: "#A83B2E" }}> — {atrasadas.length} atrasada{atrasadas.length === 1 ? "" : "s"}</span>}
+          </span>
+          <span style={{ fontSize: 12.5, color: "#7A2E22", fontWeight: 600 }}>Ver todas →</span>
+        </Card>
+      )}
+
       <SectionTitle title="Hoje" />
       <div style={{ ...grid, marginBottom: 26 }}>
         <StatCard label="Ensaios do dia" value={doDia.length} onClick={() => setDetalhe({ titulo: "Ensaios de hoje", colunas: ["Marca", "Data", "Horário", "Status"], linhas: listaEnsaios(doDia) })} />
