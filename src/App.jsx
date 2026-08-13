@@ -73,6 +73,12 @@ const btnPrimarioProdutora = { background: "#33475B", color: "#FBF4E9", border: 
 const totalCaches = (ev) => (ev.freelancersEscalados || []).reduce((s, f) => s + (Number(f.cache) || 0), 0);
 const totalDespesasEvento = (ev) => (ev.despesas || []).reduce((s, d) => s + (Number(d.valor) || 0), 0);
 const totalRecebidoEvento = (ev) => (ev.parcelas || []).filter((p) => p.recebida).reduce((s, p) => s + (Number(p.valor) || 0), 0);
+// se o evento tem parcelas cadastradas, usa elas (mais preciso). Se não tem, infere pelo status:
+// "Concluído" = considerado recebido por inteiro, qualquer outro status = considerado em aberto por inteiro.
+// Evita contar o mesmo dinheiro como "recebido" num lugar e "em aberto" em outro.
+const recebidoEvento = (ev) =>
+  (ev.parcelas || []).length > 0 ? totalRecebidoEvento(ev) : ev.status === "Concluído" ? Number(ev.valorFaturado) || 0 : 0;
+const aReceberEvento = (ev) => (Number(ev.valorFaturado) || 0) - recebidoEvento(ev);
 const PERCENTUAL_NOTA_FISCAL = 0.07;
 const valorNotaFiscalCalculado = (ev) => (ev.emiteNotaFiscal ? Math.round((Number(ev.valorFaturado) || 0) * PERCENTUAL_NOTA_FISCAL * 100) / 100 : 0);
 const lucroEvento = (ev) => (Number(ev.valorFaturado) || 0) - totalCaches(ev) - totalDespesasEvento(ev) - valorNotaFiscalCalculado(ev);
@@ -3011,10 +3017,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
     const eventosMes = eventos.filter((ev) => (ev.dataInicio || "").startsWith(mesStr));
     const produtoraFaturado = eventosMes.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
     const produtoraLucro = eventosMes.reduce((s, ev) => s + lucroEvento(ev), 0);
-    const produtoraRecebido = eventosMes.reduce(
-      (s, ev) => s + (ev.parcelas || []).filter((p) => p.recebida).reduce((s2, p) => s2 + (Number(p.valor) || 0), 0),
-      0
-    );
+    const produtoraRecebido = eventosMes.reduce((s, ev) => s + recebidoEvento(ev), 0);
     return {
       mes: nome,
       mesStr,
@@ -3675,9 +3678,13 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         const eventosMes = eventos.filter((ev) => (ev.dataInicio || "").startsWith(mesDetalhe.mesStr));
         const pagamentosFuncionariosMes = todosOsPagamentosFuncionarios.filter((p) => p.mes === mesDetalhe.mesStr);
         const despesasGeraisMes = despesasGerais.filter((d) => d.mes === mesDetalhe.mesStr);
-        const parcelasAbertoMes = eventosMes.flatMap((ev) =>
-          (ev.parcelas || []).filter((p) => !p.recebida).map((p) => ({ ...p, evento: ev.nome }))
-        );
+        const parcelasAbertoMes = eventosMes.flatMap((ev) => {
+          if ((ev.parcelas || []).length > 0) {
+            return ev.parcelas.filter((p) => !p.recebida).map((p) => ({ ...p, evento: ev.nome }));
+          }
+          const pendente = aReceberEvento(ev);
+          return pendente > 0 ? [{ id: ev.id, valor: pendente, vencimento: null, evento: ev.nome }] : [];
+        });
         return (
           <div
             style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 50 }}
@@ -7346,10 +7353,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
 
   const totalFaturadoGeral = eventos.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
   const totalLucroGeral = eventos.reduce((s, ev) => s + lucroEvento(ev), 0);
-  const totalAReceberGeral = eventos.reduce(
-    (s, ev) => s + (ev.parcelas || []).filter((p) => !p.recebida).reduce((s2, p) => s2 + (Number(p.valor) || 0), 0),
-    0
-  );
+  const totalAReceberGeral = eventos.reduce((s, ev) => s + aReceberEvento(ev), 0);
 
   const adicionarFreelancer = () => {
     const nome = novoFreelancerNome.trim();
@@ -7511,11 +7515,8 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
             {clientesProdutora.slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((c) => {
               const eventosDaEmpresa = eventos.filter((ev) => ev.empresaId === c.id);
               const totalHistorico = eventosDaEmpresa.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
-              const totalRecebidoEmpresa = eventosDaEmpresa.reduce((s, ev) => s + totalRecebidoEvento(ev), 0);
-              const totalAReceberEmpresa = eventosDaEmpresa.reduce(
-                (s, ev) => s + (ev.parcelas || []).filter((p) => !p.recebida).reduce((s2, p) => s2 + (Number(p.valor) || 0), 0),
-                0
-              );
+              const totalRecebidoEmpresa = eventosDaEmpresa.reduce((s, ev) => s + recebidoEvento(ev), 0);
+              const totalAReceberEmpresa = eventosDaEmpresa.reduce((s, ev) => s + aReceberEvento(ev), 0);
               const eventosComoFornecedora = eventos.filter((ev) => (ev.freelancersEscalados || []).some((f) => f.origem === "empresa" && f.refId === c.id));
               const totalPagoComoFornecedora = eventosComoFornecedora.reduce((s, ev) => {
                 const linha = (ev.freelancersEscalados || []).find((f) => f.origem === "empresa" && f.refId === c.id);
@@ -7837,8 +7838,8 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                 .filter((ev) => ev.empresaId === verHistoricoEmpresa.id)
                 .sort((a, b) => (a.dataInicio < b.dataInicio ? 1 : -1))
                 .map((ev) => {
-                  const recebidoEv = totalRecebidoEvento(ev);
-                  const aReceberEv = (ev.parcelas || []).filter((p) => !p.recebida).reduce((s, p) => s + (Number(p.valor) || 0), 0);
+                  const recebidoEv = recebidoEvento(ev);
+                  const aReceberEv = aReceberEvento(ev);
                   return (
                     <Card key={ev.id} style={{ padding: 12 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
@@ -7901,18 +7902,24 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
               Quem me deve
             </h3>
             <p className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginTop: 0, marginBottom: 14 }}>
-              Parcelas ainda não recebidas
+              Valores ainda não recebidos
             </p>
             <div style={{ display: "grid", gap: 8 }}>
               {eventos
-                .flatMap((ev) =>
-                  (ev.parcelas || [])
-                    .filter((p) => !p.recebida)
-                    .map((p) => ({ ...p, evento: ev.nome, empresa: nomeEmpresa(ev.empresaId) }))
-                )
+                .flatMap((ev) => {
+                  if ((ev.parcelas || []).length > 0) {
+                    return ev.parcelas
+                      .filter((p) => !p.recebida)
+                      .map((p) => ({ ...p, evento: ev.nome, empresa: nomeEmpresa(ev.empresaId) }));
+                  }
+                  const pendente = aReceberEvento(ev);
+                  return pendente > 0
+                    ? [{ id: ev.id, valor: pendente, vencimento: null, evento: ev.nome, empresa: nomeEmpresa(ev.empresaId) }]
+                    : [];
+                })
                 .sort((a, b) => (a.vencimento || "") < (b.vencimento || "") ? -1 : 1)
-                .map((p) => (
-                  <Card key={p.id} style={{ padding: 12 }}>
+                .map((p, i) => (
+                  <Card key={p.id || i} style={{ padding: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 13.5 }}>{p.empresa}</div>
