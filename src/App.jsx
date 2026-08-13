@@ -1297,6 +1297,7 @@ export default function StudioAroeiraOS() {
             onAvisarProblema={sinalizarProblema}
             eventos={eventos}
             freelancers={freelancers}
+            funcionarios={funcionarios}
           />
         )}
         {tab === "producoes" && (
@@ -1483,7 +1484,7 @@ export default function StudioAroeiraOS() {
               ["financeiro", "💰", "Financeiro"],
               ["crm", "👥", "Clientes"],
               ["modelos", "🧍", "Modelos"],
-              ["produtora", "🎪", "Produtora"],
+              ["produtora", "🎞️", "Produtora"],
               ["config", "⚙️", "Ajustes"],
             ]
           : [["painel", "📊", "Painel"], ["producoes", "🎬", "Minhas produções"], ["quadro", "🗂️", "Quadro"]]
@@ -1558,10 +1559,49 @@ function SecaoRecolhivel({ titulo, aberto, onToggle, extra, children }) {
 }
 
 // ---------- Painel da equipe (sem valores) ----------
-function PainelEquipe({ producoes, usuario, onAvisarProblema, eventos = [], freelancers = [] }) {
+function PainelEquipe({ producoes, usuario, onAvisarProblema, eventos = [], freelancers = [], funcionarios = [] }) {
   const t = hoje();
   const [detalhe, setDetalhe] = useState(null);
   const [avisando, setAvisando] = useState(null);
+  const [anoFinanceiroEquipe, setAnoFinanceiroEquipe] = useState(hoje().slice(0, 4));
+
+  const meuFuncionario = funcionarios.find((f) => (f.nome || "").trim().toLowerCase() === (usuario.nome || "").trim().toLowerCase());
+
+  const mesesFinanceiro = {};
+  const garantirMes = (mes) => {
+    if (!mesesFinanceiro[mes]) mesesFinanceiro[mes] = { estudioRecebido: 0, estudioPendente: 0, produtoraRecebido: 0, produtoraPendente: 0 };
+    return mesesFinanceiro[mes];
+  };
+  (meuFuncionario?.pagamentos || []).forEach((p) => {
+    const bucket = garantirMes(p.mes);
+    if (p.recebido !== false) bucket.estudioRecebido += Number(p.valor) || 0;
+    else bucket.estudioPendente += Number(p.valor) || 0;
+  });
+  eventos.forEach((ev) => {
+    const escala = (ev.freelancersEscalados || []).find((f) => f.origem === "equipe" && f.refId === usuario.id);
+    if (!escala || !ev.dataInicio) return;
+    const mes = ev.dataInicio.slice(0, 7);
+    const bucket = garantirMes(mes);
+    if (escala.recebido) bucket.produtoraRecebido += Number(escala.cache) || 0;
+    else bucket.produtoraPendente += Number(escala.cache) || 0;
+  });
+
+  const anosFinanceiroEquipe = Array.from(new Set(Object.keys(mesesFinanceiro).map((m) => m.slice(0, 4)))).sort().reverse();
+  if (!anosFinanceiroEquipe.includes(hoje().slice(0, 4))) anosFinanceiroEquipe.unshift(hoje().slice(0, 4));
+
+  const nomesMesLongoEquipe = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  const linhasFinanceiroEquipe = nomesMesLongoEquipe
+    .map((nome, i) => {
+      const mesStr = `${anoFinanceiroEquipe}-${String(i + 1).padStart(2, "0")}`;
+      const d = mesesFinanceiro[mesStr];
+      return d ? { mes: nome, ...d } : null;
+    })
+    .filter(Boolean);
+
+  const totalAReceberEquipe = Object.values(mesesFinanceiro).reduce((s, m) => s + m.estudioPendente + m.produtoraPendente, 0);
+  const totalRecebidoAnoEquipe = Object.entries(mesesFinanceiro)
+    .filter(([mes]) => mes.startsWith(anoFinanceiroEquipe))
+    .reduce((s, [, m]) => s + m.estudioRecebido + m.produtoraRecebido, 0);
 
   const meusEventos = eventos
     .filter((ev) => (ev.freelancersEscalados || []).some((f) => f.origem === "equipe" && f.refId === usuario.id))
@@ -1628,6 +1668,53 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema, eventos = [], free
             ⚠️ Avisar administração
           </button>
         </Card>
+      )}
+
+      {(meuFuncionario || linhasFinanceiroEquipe.length > 0) && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+            <SectionTitle title="Meu financeiro" />
+            <select
+              value={anoFinanceiroEquipe}
+              onChange={(e) => setAnoFinanceiroEquipe(e.target.value)}
+              style={{ ...inputStyle, maxWidth: 100, marginLeft: "auto" }}
+            >
+              {anosFinanceiroEquipe.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
+            <StatCard label={`Recebido em ${anoFinanceiroEquipe}`} value={fmtBRL(totalRecebidoAnoEquipe)} accent="#566B4F" />
+            <StatCard label="A receber (total)" value={fmtBRL(totalAReceberEquipe)} accent="#B9862E" />
+          </div>
+
+          <div style={{ display: "grid", gap: 8, marginBottom: 26 }}>
+            {linhasFinanceiroEquipe.map((d) => (
+              <Card key={d.mes} style={{ padding: "12px 14px" }}>
+                <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+                  {d.mes} {anoFinanceiroEquipe}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 11.5, color: "#7A2E22", fontWeight: 700, marginBottom: 3 }}>🏠 Estúdio</div>
+                    <div style={{ fontSize: 13 }}>Recebido: <b style={{ color: "#566B4F" }}>{fmtBRL(d.estudioRecebido)}</b></div>
+                    <div style={{ fontSize: 13 }}>A receber: <b style={{ color: "#B9862E" }}>{fmtBRL(d.estudioPendente)}</b></div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11.5, color: "#33475B", fontWeight: 700, marginBottom: 3 }}>🎪 Produtora</div>
+                    <div style={{ fontSize: 13 }}>Recebido: <b style={{ color: "#566B4F" }}>{fmtBRL(d.produtoraRecebido)}</b></div>
+                    <div style={{ fontSize: 13 }}>A receber: <b style={{ color: "#B9862E" }}>{fmtBRL(d.produtoraPendente)}</b></div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+            {linhasFinanceiroEquipe.length === 0 && (
+              <Card style={{ padding: 16, textAlign: "center", color: "#8A7F6E", fontSize: 13 }}>
+                Nada lançado em {anoFinanceiroEquipe} ainda.
+              </Card>
+            )}
+          </div>
+        </>
       )}
 
       <SectionTitle title="Sua semana" />
@@ -2197,6 +2284,7 @@ function Quadro({ producoes, onStatusChange, onStatusVideoChange }) {
 
   const ordenadas = producoes
     .filter((p) => !producaoConcluida(p))
+    .filter((p) => p.status !== "Agendado" || (p.temVideo && p.statusVideo && p.statusVideo !== "Agendado"))
     .sort((a, b) => (a.data + a.horario < b.data + b.horario ? -1 : 1));
 
   return (
@@ -2925,7 +3013,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         const [ano, mes] = ultimoMes.split("-").map(Number);
         const proximo = mes === 12 ? `${ano + 1}-01` : `${ano}-${String(mes + 1).padStart(2, "0")}`;
         const valorAnterior = f.pagamentos.length ? f.pagamentos[f.pagamentos.length - 1].valor : 0;
-        return { ...f, pagamentos: [...f.pagamentos, { mes: f.pagamentos.length ? proximo : hoje().slice(0, 7), valor: valorAnterior }] };
+        return { ...f, pagamentos: [...f.pagamentos, { mes: f.pagamentos.length ? proximo : hoje().slice(0, 7), valor: valorAnterior, recebido: true }] };
       })
     );
   };
@@ -3353,6 +3441,14 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
                             value={p.valor}
                             onChange={(e) => mudarPagamentoFuncionario(f.id, i, "valor", e.target.value)}
                           />
+                          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "#6B6153", whiteSpace: "nowrap" }}>
+                            <input
+                              type="checkbox"
+                              checked={p.recebido !== false}
+                              onChange={(e) => mudarPagamentoFuncionario(f.id, i, "recebido", e.target.checked)}
+                            />
+                            pago
+                          </label>
                           <button onClick={() => removerPagamentoFuncionario(f.id, i)} style={{ ...btnGhost, color: "#A83B2E", padding: "6px 9px" }}>×</button>
                         </div>
                       ))}
@@ -6680,7 +6776,7 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
 }
 
 // ---------- Produtora (eventos) ----------
-function LinhaFreelancerEvento({ linha, onMudar, onRemover, perfis, freelancers }) {
+function LinhaFreelancerEvento({ linha, onMudar, onRemover, perfis, freelancers, clientesProdutora }) {
   const valorSelect = linha.origem === "novo" ? "__novo__" : linha.refId ? `${linha.origem}:${linha.refId}` : "";
 
   const handleSelecionar = (valor) => {
@@ -6693,7 +6789,10 @@ function LinhaFreelancerEvento({ linha, onMudar, onRemover, perfis, freelancers 
       return;
     }
     const [origem, refId] = valor.split(":");
-    const nome = origem === "equipe" ? perfis.find((p) => p.id === refId)?.nome : freelancers.find((f) => f.id === refId)?.nome;
+    const nome =
+      origem === "equipe" ? perfis.find((p) => p.id === refId)?.nome :
+      origem === "empresa" ? clientesProdutora.find((c) => c.id === refId)?.nome :
+      freelancers.find((f) => f.id === refId)?.nome;
     onMudar({ ...linha, origem, refId, nome: nome || "" });
   };
 
@@ -6727,6 +6826,11 @@ function LinhaFreelancerEvento({ linha, onMudar, onRemover, perfis, freelancers 
             {freelancers.length > 0 && (
               <optgroup label="Freelancers cadastrados">
                 {freelancers.map((f) => <option key={f.id} value={`freelancer:${f.id}`}>{f.nome}</option>)}
+              </optgroup>
+            )}
+            {clientesProdutora.length > 0 && (
+              <optgroup label="Empresas parceiras (prestando serviço pra você)">
+                {clientesProdutora.map((c) => <option key={c.id} value={`empresa:${c.id}`}>{c.nome}</option>)}
               </optgroup>
             )}
             <option value="__novo__">+ novo freelancer (digitar nome)</option>
@@ -6846,9 +6950,12 @@ function ModalEvento({ evento, setEvento, onSalvar, onFechar, perfis, freelancer
         </div>
 
         <div style={{ marginTop: 20 }}>
-          <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+          <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 4 }}>
             Freelancers escalados
           </div>
+          <p style={{ fontSize: 11.5, color: "#8A7F6E", margin: "0 0 8px" }}>
+            Quem você vai pagar nesse evento — pode ser da equipe, um freelancer avulso, ou até uma empresa parceira já cadastrada como cliente (quando ela é quem presta serviço pra você dessa vez).
+          </p>
           {freelancersEscalados.map((linha, i) => (
             <LinhaFreelancerEvento
               key={linha.id}
@@ -6857,6 +6964,7 @@ function ModalEvento({ evento, setEvento, onSalvar, onFechar, perfis, freelancer
               onRemover={() => removerFreelancer(i)}
               perfis={perfis}
               freelancers={freelancers}
+              clientesProdutora={clientesProdutora}
             />
           ))}
           <button type="button" onClick={adicionarFreelancer} style={btnGhost}>+ Adicionar freelancer</button>
@@ -6983,7 +7091,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
         return { ...f, origem: "freelancer", refId: novoFreelancer.id };
       }
       return f;
-    }).filter((f) => f.origem === "equipe" || f.origem === "freelancer");
+    }).filter((f) => f.origem === "equipe" || f.origem === "freelancer" || f.origem === "empresa");
     ev = { ...ev, freelancersEscalados: freelancersEscaladosResolvidos };
 
     const salvo = ev.id ? ev : { ...ev, id: uid() };
@@ -7114,6 +7222,11 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
             {clientesProdutora.map((c) => {
               const eventosDaEmpresa = eventos.filter((ev) => ev.empresaId === c.id);
               const totalHistorico = eventosDaEmpresa.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
+              const eventosComoFornecedora = eventos.filter((ev) => (ev.freelancersEscalados || []).some((f) => f.origem === "empresa" && f.refId === c.id));
+              const totalPagoComoFornecedora = eventosComoFornecedora.reduce((s, ev) => {
+                const linha = (ev.freelancersEscalados || []).find((f) => f.origem === "empresa" && f.refId === c.id);
+                return s + (Number(linha?.cache) || 0);
+              }, 0);
               return (
                 <Card key={c.id} style={{ padding: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -7125,10 +7238,15 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                       Excluir
                     </button>
                   </div>
-                  <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12.5, color: "#6B6153" }}>
-                    <span>{eventosDaEmpresa.length} evento(s)</span>
+                  <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12.5, color: "#6B6153", flexWrap: "wrap" }}>
+                    <span>{eventosDaEmpresa.length} evento(s) como cliente</span>
                     <span>Total faturado: <b>{fmtBRL(totalHistorico)}</b></span>
                   </div>
+                  {eventosComoFornecedora.length > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 12.5, color: COR_PRODUTORA, background: "#EEF2F4", padding: "6px 10px", borderRadius: 8 }}>
+                      🔁 Também prestou serviço pra você em {eventosComoFornecedora.length} evento(s) — total pago: <b>{fmtBRL(totalPagoComoFornecedora)}</b>
+                    </div>
+                  )}
                 </Card>
               );
             })}
