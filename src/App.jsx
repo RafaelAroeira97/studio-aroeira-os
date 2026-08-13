@@ -7438,6 +7438,8 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
               .filter((l) => (filtroPagamentoFreelancer === "todos" ? true : filtroPagamentoFreelancer === "pendentes" ? !l.recebido : l.recebido))
               .filter((l) => !buscaNorm || l.nome.toLowerCase().includes(buscaNorm));
             const totalFiltradoPendente = lancamentosFiltrados.filter((l) => !l.recebido).reduce((s, l) => s + (Number(l.cache) || 0), 0);
+            const totalFiltradoPago = lancamentosFiltrados.filter((l) => l.recebido).reduce((s, l) => s + (Number(l.cache) || 0), 0);
+            const totalFiltradoGeral = totalFiltradoPendente + totalFiltradoPago;
             const exportarCSV = () => {
               const linhas = [["Nome", "Origem", "Evento", "Data", "Valor", "Status"]];
               lancamentos.forEach((l) =>
@@ -7516,8 +7518,18 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                     {buscaNomePagamento && (
                       <p style={{ fontSize: 12.5, color: "#8A7F6E", margin: "-4px 0 12px" }}>
                         {lancamentosFiltrados.length} lançamento(s) de <b>{buscaNomePagamento}</b>
-                        {filtroPagamentoFreelancer !== "pagos" && (
+                        {filtroPagamentoFreelancer === "pendentes" && (
                           <> — total a pagar: <b style={{ color: "#B9862E" }}>{fmtBRL(totalFiltradoPendente)}</b></>
+                        )}
+                        {filtroPagamentoFreelancer === "pagos" && (
+                          <> — total pago: <b style={{ color: "#566B4F" }}>{fmtBRL(totalFiltradoPago)}</b></>
+                        )}
+                        {filtroPagamentoFreelancer === "todos" && (
+                          <>
+                            {" "}— total: <b>{fmtBRL(totalFiltradoGeral)}</b>
+                            {" "}(pago: <b style={{ color: "#566B4F" }}>{fmtBRL(totalFiltradoPago)}</b>
+                            {" "}· a pagar: <b style={{ color: "#B9862E" }}>{fmtBRL(totalFiltradoPendente)}</b>)
+                          </>
                         )}
                       </p>
                     )}
