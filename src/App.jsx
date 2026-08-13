@@ -7143,6 +7143,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
   const [abertoPagamentosFreelancer, setAbertoPagamentosFreelancer] = useState(false);
   const [filtroPagamentoFreelancer, setFiltroPagamentoFreelancer] = useState("pendentes");
   const [buscaNomePagamento, setBuscaNomePagamento] = useState("");
+  const [verHistoricoEmpresa, setVerHistoricoEmpresa] = useState(null);
   const [novoFreelancerNome, setNovoFreelancerNome] = useState("");
   const [novoFreelancerContato, setNovoFreelancerContato] = useState("");
   const [excluindoFreelancer, setExcluindoFreelancer] = useState(null);
@@ -7387,12 +7388,18 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
               }, 0);
               return (
                 <Card key={c.id} style={{ padding: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div
+                    onClick={() => setVerHistoricoEmpresa(c)}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                  >
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 14.5 }}>{c.nome}</div>
                       {c.contato && <div style={{ fontSize: 12, color: "#8A7F6E" }}>{c.contato}</div>}
                     </div>
-                    <button onClick={() => setExcluindoEmpresa(c)} style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 12.5 }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setExcluindoEmpresa(c); }}
+                      style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 12.5 }}
+                    >
                       Excluir
                     </button>
                   </div>
@@ -7673,6 +7680,77 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
             setExcluindoFreelancer(null);
           }}
         />
+      )}
+
+      {verHistoricoEmpresa && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 50 }}
+          onClick={() => setVerHistoricoEmpresa(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 500, width: "100%", maxHeight: "82vh", overflowY: "auto" }}
+          >
+            <h3 className="font-display" style={{ fontSize: 19, fontWeight: 600, marginTop: 0, marginBottom: 4, color: "#33475B" }}>
+              {verHistoricoEmpresa.nome}
+            </h3>
+            <p className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginTop: 0, marginBottom: 14 }}>
+              Histórico de eventos
+            </p>
+            <div style={{ display: "grid", gap: 10 }}>
+              {eventos
+                .filter((ev) => ev.empresaId === verHistoricoEmpresa.id)
+                .sort((a, b) => (a.dataInicio < b.dataInicio ? 1 : -1))
+                .map((ev) => {
+                  const recebidoEv = totalRecebidoEvento(ev);
+                  const aReceberEv = (ev.parcelas || []).filter((p) => !p.recebida).reduce((s, p) => s + (Number(p.valor) || 0), 0);
+                  return (
+                    <Card key={ev.id} style={{ padding: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{ev.nome}</div>
+                          <div style={{ fontSize: 12, color: "#8A7F6E" }}>
+                            {fmtData(ev.dataInicio)}{ev.dataFim && ev.dataFim !== ev.dataInicio && <> – {fmtData(ev.dataFim)}</>}
+                            {ev.cidade && <> · 📍 {ev.cidade}</>}
+                          </div>
+                        </div>
+                        <Badge color={STATUS_EVENTO_COR[ev.status] || COR_PRODUTORA}>{ev.status}</Badge>
+                      </div>
+                      <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12.5 }}>
+                        <span>Faturado: <b>{fmtBRL(ev.valorFaturado)}</b></span>
+                      </div>
+                      <div style={{ display: "flex", gap: 16, marginTop: 4, fontSize: 12.5 }}>
+                        <span>Recebido: <b style={{ color: "#566B4F" }}>{fmtBRL(recebidoEv)}</b></span>
+                        {aReceberEv > 0 ? (
+                          <span>A receber: <b style={{ color: "#B9862E" }}>{fmtBRL(aReceberEv)}</b></span>
+                        ) : (
+                          <span style={{ color: "#566B4F" }}>✓ Tudo pago</span>
+                        )}
+                      </div>
+                      {(ev.parcelas || []).length > 0 && (
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #F0E8D6", display: "grid", gap: 4 }}>
+                          {ev.parcelas.map((p) => (
+                            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                              <span style={{ color: "#8A7F6E" }}>
+                                {p.vencimento ? fmtData(p.vencimento) : "sem data"} — {fmtBRL(p.valor)}
+                              </span>
+                              <Badge color={p.recebida ? "#566B4F" : "#B9862E"}>{p.recebida ? "Recebida" : "Pendente"}</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              {eventos.filter((ev) => ev.empresaId === verHistoricoEmpresa.id).length === 0 && (
+                <Card style={{ padding: 20, textAlign: "center", color: "#8A7F6E", fontSize: 13.5 }}>Nenhum evento registrado ainda.</Card>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+              <button onClick={() => setVerHistoricoEmpresa(null)} style={btnGhost}>Fechar</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {verAReceber && (
