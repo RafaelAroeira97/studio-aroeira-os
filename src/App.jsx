@@ -60,6 +60,7 @@ const COR_PRODUTORA_CLARA = "#4A6478";
 const STATUS_EVENTO = ["Planejado", "Em andamento", "Concluído"];
 const STATUS_EVENTO_COR = { "Planejado": "#B9862E", "Em andamento": "#33475B", "Concluído": "#566B4F" };
 const CATEGORIAS_DESPESA_EVENTO = ["Transporte", "Hospedagem", "Alimentação", "Outras"];
+const FUNCOES_EVENTO = ["Fotógrafo", "Filmmaker", "Editor de foto", "Editor de vídeo", "Storymaker", "Produção", "Assistente", "Outro"];
 const btnPrimarioProdutora = { background: "#33475B", color: "#FBF4E9", border: "none", padding: "9px 18px", borderRadius: 999, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 6 };
 const totalCaches = (ev) => (ev.freelancersEscalados || []).reduce((s, f) => s + (Number(f.cache) || 0), 0);
 const totalDespesasEvento = (ev) => (ev.despesas || []).reduce((s, d) => s + (Number(d.valor) || 0), 0);
@@ -6853,6 +6854,33 @@ function LinhaFreelancerEvento({ linha, onMudar, onRemover, perfis, freelancers,
           já pago
         </label>
       </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+        {FUNCOES_EVENTO.map((fn) => {
+          const ativo = (linha.funcoes || []).includes(fn);
+          return (
+            <button
+              type="button"
+              key={fn}
+              onClick={() => {
+                const atuais = linha.funcoes || [];
+                const novas = ativo ? atuais.filter((x) => x !== fn) : [...atuais, fn];
+                onMudar({ ...linha, funcoes: novas });
+              }}
+              style={{
+                background: ativo ? "#33475B" : "transparent",
+                color: ativo ? "#FBF4E9" : "#6B6153",
+                border: `1px solid ${ativo ? "#33475B" : "#DCCFB2"}`,
+                borderRadius: 999,
+                padding: "3px 10px",
+                fontSize: 11.5,
+                cursor: "pointer",
+              }}
+            >
+              {fn}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -6872,7 +6900,7 @@ function ModalEvento({ evento, setEvento, onSalvar, onFechar, perfis, freelancer
     setEvento({ ...ev, freelancersEscalados: novas });
   };
   const removerFreelancer = (i) => setEvento({ ...ev, freelancersEscalados: freelancersEscalados.filter((_, idx) => idx !== i) });
-  const adicionarFreelancer = () => setEvento({ ...ev, freelancersEscalados: [...freelancersEscalados, { id: uid(), origem: "", refId: null, nome: "", cache: 0, recebido: false }] });
+  const adicionarFreelancer = () => setEvento({ ...ev, freelancersEscalados: [...freelancersEscalados, { id: uid(), origem: "", refId: null, nome: "", cache: 0, recebido: false, funcoes: [] }] });
 
   const atualizarDespesa = (i, campo, valor) => {
     const novas = despesas.slice();
@@ -6922,6 +6950,12 @@ function ModalEvento({ evento, setEvento, onSalvar, onFechar, perfis, freelancer
             <datalist id="lista-empresas-produtora">
               {clientesProdutora.map((c) => <option key={c.id} value={c.nome} />)}
             </datalist>
+          </Field>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <Field label="Cidade onde foi prestado o serviço">
+            <input style={inputStyle} value={ev.cidade || ""} onChange={set("cidade")} placeholder="ex: Caruaru" />
           </Field>
         </div>
 
@@ -7068,6 +7102,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
       nome: "",
       empresaId: null,
       empresaNome: "",
+      cidade: "",
       dataInicio: hoje(),
       dataFim: hoje(),
       valorFaturado: 0,
@@ -7196,6 +7231,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                         <div style={{ fontSize: 12.5, color: "#6B6153", marginTop: 2 }}>
                           {nomeEmpresa(ev.empresaId)} · {fmtData(ev.dataInicio)}
                           {ev.dataFim && ev.dataFim !== ev.dataInicio && <> – {fmtData(ev.dataFim)}</>}
+                          {ev.cidade && <> · 📍 {ev.cidade}</>}
                         </div>
                       </div>
                       <Badge color={STATUS_EVENTO_COR[ev.status] || COR_PRODUTORA}>{ev.status}</Badge>
