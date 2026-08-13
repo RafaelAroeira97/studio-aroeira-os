@@ -54,6 +54,18 @@ function statusDescritivo(p) {
 
 const STATUS_PAGAMENTO = ["Em aberto", "Pago", "Parcialmente pago", "Cancelado"];
 
+// ---------- Produtora (eventos) ----------
+const COR_PRODUTORA = "#33475B";
+const COR_PRODUTORA_CLARA = "#4A6478";
+const STATUS_EVENTO = ["Planejado", "Em andamento", "Concluído"];
+const STATUS_EVENTO_COR = { "Planejado": "#B9862E", "Em andamento": "#33475B", "Concluído": "#566B4F" };
+const CATEGORIAS_DESPESA_EVENTO = ["Transporte", "Hospedagem", "Alimentação", "Outras"];
+const btnPrimarioProdutora = { background: "#33475B", color: "#FBF4E9", border: "none", padding: "9px 18px", borderRadius: 999, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 6 };
+const totalCaches = (ev) => (ev.freelancersEscalados || []).reduce((s, f) => s + (Number(f.cache) || 0), 0);
+const totalDespesasEvento = (ev) => (ev.despesas || []).reduce((s, d) => s + (Number(d.valor) || 0), 0);
+const totalRecebidoEvento = (ev) => (ev.parcelas || []).filter((p) => p.recebida).reduce((s, p) => s + (Number(p.valor) || 0), 0);
+const lucroEvento = (ev) => (Number(ev.valorFaturado) || 0) - totalCaches(ev) - totalDespesasEvento(ev) - (Number(ev.valorNotaFiscal) || 0);
+
 const PRECOS_PADRAO = { look: 40, lookbook: 150, video: 50, prato: 50, fotoCorporativa: 50 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -449,6 +461,9 @@ export default function StudioAroeiraOS() {
   const [historicoFinanceiro, setHistoricoFinanceiro] = useState([]);
   const [funcionarios, setFuncionarios] = useState([]);
   const [despesasGerais, setDespesasGerais] = useState([]);
+  const [eventos, setEventos] = useState([]);
+  const [freelancers, setFreelancers] = useState([]);
+  const [clientesProdutora, setClientesProdutora] = useState([]);
   const [editandoModelo, setEditandoModelo] = useState(null);
   const [notificacoes, setNotificacoes] = useState([]);
   const [ultimaVista, setUltimaVista] = useState(0);
@@ -565,6 +580,18 @@ export default function StudioAroeiraOS() {
         }
       } catch (e) {}
       try {
+        const ev = await storage.get("eventos", true);
+        if (ev) setEventos(JSON.parse(ev.value));
+      } catch (e) {}
+      try {
+        const fl = await storage.get("freelancers-produtora", true);
+        if (fl) setFreelancers(JSON.parse(fl.value));
+      } catch (e) {}
+      try {
+        const cp = await storage.get("clientes-produtora", true);
+        if (cp) setClientesProdutora(JSON.parse(cp.value));
+      } catch (e) {}
+      try {
         const nt = await storage.get("notificacoes", true);
         if (nt) setNotificacoes(JSON.parse(nt.value));
       } catch (e) {}
@@ -605,6 +632,9 @@ export default function StudioAroeiraOS() {
           segmentosDisponiveis,
           funcionarios,
           despesasGerais,
+          eventos,
+          freelancers,
+          clientesProdutora,
           perfis: perfis.map(({ pin, ...resto }) => resto),
         };
         await storage.set(chaveHoje, JSON.stringify(dump), true);
@@ -688,6 +718,30 @@ export default function StudioAroeiraOS() {
     setDespesasGerais(novas);
     try {
       await storage.set("despesas-gerais", JSON.stringify(novas), true);
+      mostrarSalvo();
+    } catch (e) {}
+  }, []);
+
+  const salvarEventos = useCallback(async (novos) => {
+    setEventos(novos);
+    try {
+      await storage.set("eventos", JSON.stringify(novos), true);
+      mostrarSalvo();
+    } catch (e) {}
+  }, []);
+
+  const salvarFreelancers = useCallback(async (novos) => {
+    setFreelancers(novos);
+    try {
+      await storage.set("freelancers-produtora", JSON.stringify(novos), true);
+      mostrarSalvo();
+    } catch (e) {}
+  }, []);
+
+  const salvarClientesProdutora = useCallback(async (novos) => {
+    setClientesProdutora(novos);
+    try {
+      await storage.set("clientes-produtora", JSON.stringify(novos), true);
       mostrarSalvo();
     } catch (e) {}
   }, []);
@@ -1236,7 +1290,15 @@ export default function StudioAroeiraOS() {
         {isAdmin && tab === "dashboard" && <Dashboard producoes={producoes} precos={precos} clientes={clientes} historicoFinanceiro={historicoFinanceiro} />}
         {isAdmin && tab === "calendario" && <Calendario producoes={producoes} onEditar={editarProducao} />}
         {tab === "quadro" && <Quadro producoes={isAdmin ? producoes : minhasProducoes} onStatusChange={mudarStatus} onStatusVideoChange={mudarStatusVideo} />}
-        {!isAdmin && tab === "painel" && <PainelEquipe producoes={minhasProducoes} usuario={usuario} onAvisarProblema={sinalizarProblema} />}
+        {!isAdmin && tab === "painel" && (
+          <PainelEquipe
+            producoes={minhasProducoes}
+            usuario={usuario}
+            onAvisarProblema={sinalizarProblema}
+            eventos={eventos}
+            freelancers={freelancers}
+          />
+        )}
         {tab === "producoes" && (
           <Producoes
             producoes={producoesFiltradas}
@@ -1270,6 +1332,7 @@ export default function StudioAroeiraOS() {
             modelos={modelos}
             salvarProducoes={salvarProducoes}
             cenariosDisponiveis={cenariosDisponiveis}
+            eventos={eventos}
           />
         )}
         {isAdmin && tab === "crm" && (
@@ -1292,6 +1355,17 @@ export default function StudioAroeiraOS() {
             onExcluir={excluirModelo}
             producoes={producoes}
             salvarModelos={salvarModelos}
+          />
+        )}
+        {isAdmin && tab === "produtora" && (
+          <Produtora
+            eventos={eventos}
+            salvarEventos={salvarEventos}
+            freelancers={freelancers}
+            salvarFreelancers={salvarFreelancers}
+            clientesProdutora={clientesProdutora}
+            salvarClientesProdutora={salvarClientesProdutora}
+            perfis={perfis}
           />
         )}
         {isAdmin && tab === "config" && (
@@ -1320,6 +1394,12 @@ export default function StudioAroeiraOS() {
             salvarFuncionarios={salvarFuncionarios}
             despesasGerais={despesasGerais}
             salvarDespesasGerais={salvarDespesasGerais}
+            eventos={eventos}
+            salvarEventos={salvarEventos}
+            freelancers={freelancers}
+            salvarFreelancers={salvarFreelancers}
+            clientesProdutora={clientesProdutora}
+            salvarClientesProdutora={salvarClientesProdutora}
           />
         )}
       </main>
@@ -1403,6 +1483,7 @@ export default function StudioAroeiraOS() {
               ["financeiro", "💰", "Financeiro"],
               ["crm", "👥", "Clientes"],
               ["modelos", "🧍", "Modelos"],
+              ["produtora", "🎪", "Produtora"],
               ["config", "⚙️", "Ajustes"],
             ]
           : [["painel", "📊", "Painel"], ["producoes", "🎬", "Minhas produções"], ["quadro", "🗂️", "Quadro"]]
@@ -1477,10 +1558,18 @@ function SecaoRecolhivel({ titulo, aberto, onToggle, extra, children }) {
 }
 
 // ---------- Painel da equipe (sem valores) ----------
-function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
+function PainelEquipe({ producoes, usuario, onAvisarProblema, eventos = [], freelancers = [] }) {
   const t = hoje();
   const [detalhe, setDetalhe] = useState(null);
   const [avisando, setAvisando] = useState(null);
+
+  const meusEventos = eventos
+    .filter((ev) => (ev.freelancersEscalados || []).some((f) => f.origem === "equipe" && f.refId === usuario.id))
+    .map((ev) => {
+      const minhaEscala = (ev.freelancersEscalados || []).find((f) => f.origem === "equipe" && f.refId === usuario.id);
+      return { ...ev, meuCache: minhaEscala?.cache || 0, meuRecebido: !!minhaEscala?.recebido };
+    })
+    .sort((a, b) => (a.dataInicio < b.dataInicio ? -1 : 1));
 
   const inicioSemana = new Date();
   inicioSemana.setDate(inicioSemana.getDate() - inicioSemana.getDay());
@@ -1548,14 +1637,15 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
           d.setDate(d.getDate() + i);
           const iso = d.toISOString().slice(0, 10);
           const doDia = producoes.filter((p) => p.data === iso).sort((a, b) => (a.horario < b.horario ? -1 : 1));
+          const eventosDoDia = meusEventos.filter((ev) => iso >= ev.dataInicio && iso <= (ev.dataFim || ev.dataInicio));
           const ehHoje = iso === t;
           const nomeDia = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"][d.getDay()];
           return (
             <Card key={iso} style={{ padding: "10px 14px", borderColor: ehHoje ? "#7A2E22" : undefined }}>
-              <div className="font-mono" style={{ fontSize: 10.5, color: ehHoje ? "#7A2E22" : "#8A7F6E", fontWeight: ehHoje ? 700 : 500, textTransform: "uppercase", marginBottom: doDia.length ? 6 : 0 }}>
+              <div className="font-mono" style={{ fontSize: 10.5, color: ehHoje ? "#7A2E22" : "#8A7F6E", fontWeight: ehHoje ? 700 : 500, textTransform: "uppercase", marginBottom: doDia.length || eventosDoDia.length ? 6 : 0 }}>
                 {nomeDia} · {fmtData(iso)}{ehHoje && " · hoje"}
               </div>
-              {doDia.length === 0 ? (
+              {doDia.length === 0 && eventosDoDia.length === 0 ? (
                 <div style={{ fontSize: 12.5, color: "#B0A388" }}>Sem ensaio</div>
               ) : (
                 <div style={{ display: "grid", gap: 6 }}>
@@ -1568,12 +1658,46 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema }) {
                       <Badge color={STATUS_COR[p.status] || "#8A7F6E"}>{p.status}</Badge>
                     </div>
                   ))}
+                  {eventosDoDia.map((ev) => (
+                    <div key={ev.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, flexWrap: "wrap", gap: 4 }}>
+                      <span>
+                        🎪 <b>{ev.nome}</b>
+                      </span>
+                      <Badge color={COR_PRODUTORA}>Evento</Badge>
+                    </div>
+                  ))}
                 </div>
               )}
             </Card>
           );
         })}
       </div>
+
+      {meusEventos.length > 0 && (
+        <>
+          <SectionTitle title="Meus eventos" />
+          <div style={{ display: "grid", gap: 10, marginBottom: 26 }}>
+            {meusEventos.map((ev) => (
+              <Card key={ev.id} style={{ padding: 14, borderColor: COR_PRODUTORA }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div>
+                    <div className="font-display" style={{ fontSize: 15.5, fontWeight: 600 }}>{ev.nome}</div>
+                    <div style={{ fontSize: 12.5, color: "#6B6153", marginTop: 2 }}>
+                      {fmtData(ev.dataInicio)}{ev.dataFim && ev.dataFim !== ev.dataInicio && <> – {fmtData(ev.dataFim)}</>}
+                    </div>
+                  </div>
+                  <Badge color={STATUS_EVENTO_COR[ev.status] || COR_PRODUTORA}>{ev.status}</Badge>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, fontSize: 13.5 }}>
+                  <span style={{ color: "#6B6153" }}>Seu cachê</span>
+                  <b>{fmtBRL(ev.meuCache)}</b>
+                </div>
+                <Badge color={ev.meuRecebido ? "#566B4F" : "#B9862E"}>{ev.meuRecebido ? "Recebido" : "A receber"}</Badge>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px,1fr))", gap: 12, marginBottom: 26 }}>
         <StatCard
@@ -2652,7 +2776,7 @@ const CORES_PUBLICO = {
   "Não informado": "#8A7F6E",
 };
 
-function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, salvarHistoricoFinanceiro, funcionarios, salvarFuncionarios, despesasGerais, salvarDespesasGerais, modelos, salvarProducoes, cenariosDisponiveis }) {
+function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, salvarHistoricoFinanceiro, funcionarios, salvarFuncionarios, despesasGerais, salvarDespesasGerais, modelos, salvarProducoes, cenariosDisponiveis, eventos = [] }) {
   const clientesApenasMensal = new Set(clientesCadastro.filter((c) => c.clienteMensal || c.apenasMensal).map((c) => c.nome));
   const producoesFaturaveis = producoes.filter((p) => !clientesApenasMensal.has(p.cliente));
 
@@ -2768,7 +2892,18 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
     const despesasMes =
       todosOsPagamentosFuncionarios.filter((p) => p.mes === mesStr).reduce((s, p) => s + (Number(p.valor) || 0), 0) +
       despesasGerais.filter((d) => d.mes === mesStr).reduce((s, d) => s + (Number(d.valor) || 0), 0);
-    return { mes: nome, mesStr, faturado, recebido, despesas: despesasMes, lucro: faturado - despesasMes };
+    const eventosMes = eventos.filter((ev) => (ev.dataInicio || "").startsWith(mesStr));
+    const produtoraFaturado = eventosMes.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
+    const produtoraLucro = eventosMes.reduce((s, ev) => s + lucroEvento(ev), 0);
+    return {
+      mes: nome,
+      mesStr,
+      faturado: faturado + produtoraFaturado,
+      recebido,
+      despesas: despesasMes,
+      lucro: faturado - despesasMes + produtoraLucro,
+      produtora: produtoraFaturado,
+    };
   });
 
   const adicionarFuncionario = () => {
@@ -2935,7 +3070,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
           <thead>
             <tr style={{ textAlign: "left", borderBottom: "1px solid #E4D9C4" }}>
-              {["Mês", "Faturado", "Recebido", "Em aberto", "Despesas", "Lucro"].map((h) => (
+              {["Mês", "Faturado", "Produtora", "Recebido", "Em aberto", "Despesas", "Lucro"].map((h) => (
                 <th key={h} className="font-mono" style={{ padding: "10px 12px", color: "#8A7F6E", fontWeight: 500, fontSize: 11, textTransform: "uppercase" }}>
                   {h}
                 </th>
@@ -2947,6 +3082,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
               <tr key={d.mes} style={{ borderBottom: "1px solid #F0E8D6", opacity: d.faturado === 0 && d.despesas === 0 ? 0.5 : 1 }}>
                 <td style={{ padding: "9px 12px" }}>{d.mes}</td>
                 <td style={{ padding: "9px 12px", fontWeight: 600 }}>{fmtBRL(d.faturado)}</td>
+                <td style={{ padding: "9px 12px", color: "#33475B" }}>{d.produtora ? fmtBRL(d.produtora) : "—"}</td>
                 <td style={{ padding: "9px 12px", color: "#566B4F" }}>{fmtBRL(d.recebido)}</td>
                 <td style={{ padding: "9px 12px", color: "#B9862E" }}>{fmtBRL(d.faturado - d.recebido)}</td>
                 <td style={{ padding: "9px 12px", color: "#A83B2E" }}>{fmtBRL(d.despesas)}</td>
@@ -4241,7 +4377,7 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
 }
 
 // ---------- Config ----------
-function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSheets, salvarWebhookSheets, statusSync, sincronizando, clientesCadastro, salvarClientesCadastro, producoes, salvarProducoes, segmentosDisponiveis, salvarSegmentosDisponiveis, modelos, salvarModelos, cenariosDisponiveis, salvarCenariosDisponiveis, registrarNotificacao, funcionarios, salvarFuncionarios, despesasGerais, salvarDespesasGerais }) {
+function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSheets, salvarWebhookSheets, statusSync, sincronizando, clientesCadastro, salvarClientesCadastro, producoes, salvarProducoes, segmentosDisponiveis, salvarSegmentosDisponiveis, modelos, salvarModelos, cenariosDisponiveis, salvarCenariosDisponiveis, registrarNotificacao, funcionarios, salvarFuncionarios, despesasGerais, salvarDespesasGerais, eventos, salvarEventos, freelancers, salvarFreelancers, clientesProdutora, salvarClientesProdutora }) {
   const [local, setLocal] = useState(precos);
   const [novoNome, setNovoNome] = useState("");
   const [novoPapel, setNovoPapel] = useState("equipe");
@@ -4284,6 +4420,9 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
       segmentosDisponiveis,
       funcionarios,
       despesasGerais,
+      eventos,
+      freelancers,
+      clientesProdutora,
       perfis: perfis.map(({ pin, ...resto }) => resto),
     };
     const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
@@ -4322,6 +4461,9 @@ function Config({ precos, salvarPrecos, perfis, salvarPerfis, usuario, webhookSh
     if (backupPendente.segmentosDisponiveis) salvarSegmentosDisponiveis(backupPendente.segmentosDisponiveis);
     if (backupPendente.funcionarios) salvarFuncionarios(backupPendente.funcionarios);
     if (backupPendente.despesasGerais) salvarDespesasGerais(backupPendente.despesasGerais);
+    if (backupPendente.eventos) salvarEventos(backupPendente.eventos);
+    if (backupPendente.freelancers) salvarFreelancers(backupPendente.freelancers);
+    if (backupPendente.clientesProdutora) salvarClientesProdutora(backupPendente.clientesProdutora);
     setBackupPendente(null);
     setTimeout(() => setRestaurando(false), 600);
   };
@@ -6533,6 +6675,558 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
           <button onClick={onSalvar} style={btnPrimario}>Salvar produção</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------- Produtora (eventos) ----------
+function LinhaFreelancerEvento({ linha, onMudar, onRemover, perfis, freelancers }) {
+  const valorSelect = linha.origem === "novo" ? "__novo__" : linha.refId ? `${linha.origem}:${linha.refId}` : "";
+
+  const handleSelecionar = (valor) => {
+    if (valor === "__novo__") {
+      onMudar({ ...linha, origem: "novo", refId: null, nome: "" });
+      return;
+    }
+    if (!valor) {
+      onMudar({ ...linha, origem: "", refId: null, nome: "" });
+      return;
+    }
+    const [origem, refId] = valor.split(":");
+    const nome = origem === "equipe" ? perfis.find((p) => p.id === refId)?.nome : freelancers.find((f) => f.id === refId)?.nome;
+    onMudar({ ...linha, origem, refId, nome: nome || "" });
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 6, padding: "10px 12px", background: "#F8F3E8", borderRadius: 10, marginBottom: 8 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {linha.origem === "novo" ? (
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <input
+              style={inputStyle}
+              placeholder="Nome do novo freelancer"
+              value={linha.nome}
+              onChange={(e) => onMudar({ ...linha, nome: e.target.value })}
+            />
+            <button
+              type="button"
+              onClick={() => onMudar({ ...linha, origem: "", refId: null, nome: "" })}
+              style={{ background: "none", border: "none", color: "#33475B", fontSize: 11, cursor: "pointer", padding: "4px 0 0", textDecoration: "underline" }}
+            >
+              escolher da lista
+            </button>
+          </div>
+        ) : (
+          <select style={{ ...inputStyle, flex: 1, minWidth: 140 }} value={valorSelect} onChange={(e) => handleSelecionar(e.target.value)}>
+            <option value="">— selecionar —</option>
+            {perfis.length > 0 && (
+              <optgroup label="Equipe">
+                {perfis.map((p) => <option key={p.id} value={`equipe:${p.id}`}>{p.nome}</option>)}
+              </optgroup>
+            )}
+            {freelancers.length > 0 && (
+              <optgroup label="Freelancers cadastrados">
+                {freelancers.map((f) => <option key={f.id} value={`freelancer:${f.id}`}>{f.nome}</option>)}
+              </optgroup>
+            )}
+            <option value="__novo__">+ novo freelancer (digitar nome)</option>
+          </select>
+        )}
+        <button type="button" onClick={onRemover} style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>✕</button>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="number"
+          style={{ ...inputStyle, maxWidth: 130 }}
+          placeholder="Cachê (R$)"
+          value={linha.cache === 0 ? "" : linha.cache}
+          onChange={(e) => onMudar({ ...linha, cache: e.target.value === "" ? "" : Number(e.target.value) })}
+        />
+        <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "#6B6153" }}>
+          <input type="checkbox" checked={!!linha.recebido} onChange={(e) => onMudar({ ...linha, recebido: e.target.checked })} />
+          já pago
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function ModalEvento({ evento, setEvento, onSalvar, onFechar, perfis, freelancers, clientesProdutora }) {
+  const ev = evento;
+  const set = (campo) => (e) => setEvento({ ...ev, [campo]: e.target.value });
+  const setNum = (campo) => (e) => setEvento({ ...ev, [campo]: e.target.value === "" ? "" : Number(e.target.value) });
+
+  const freelancersEscalados = ev.freelancersEscalados || [];
+  const despesas = ev.despesas || [];
+  const parcelas = ev.parcelas || [];
+
+  const atualizarFreelancer = (i, nova) => {
+    const novas = freelancersEscalados.slice();
+    novas[i] = nova;
+    setEvento({ ...ev, freelancersEscalados: novas });
+  };
+  const removerFreelancer = (i) => setEvento({ ...ev, freelancersEscalados: freelancersEscalados.filter((_, idx) => idx !== i) });
+  const adicionarFreelancer = () => setEvento({ ...ev, freelancersEscalados: [...freelancersEscalados, { id: uid(), origem: "", refId: null, nome: "", cache: 0, recebido: false }] });
+
+  const atualizarDespesa = (i, campo, valor) => {
+    const novas = despesas.slice();
+    novas[i] = { ...novas[i], [campo]: valor };
+    setEvento({ ...ev, despesas: novas });
+  };
+  const removerDespesa = (i) => setEvento({ ...ev, despesas: despesas.filter((_, idx) => idx !== i) });
+  const adicionarDespesa = () => setEvento({ ...ev, despesas: [...despesas, { id: uid(), categoria: CATEGORIAS_DESPESA_EVENTO[0], nome: "", valor: 0 }] });
+
+  const atualizarParcela = (i, campo, valor) => {
+    const novas = parcelas.slice();
+    novas[i] = { ...novas[i], [campo]: valor };
+    setEvento({ ...ev, parcelas: novas });
+  };
+  const removerParcela = (i) => setEvento({ ...ev, parcelas: parcelas.filter((_, idx) => idx !== i) });
+  const adicionarParcela = () => setEvento({ ...ev, parcelas: [...parcelas, { id: uid(), valor: 0, vencimento: "", recebida: false }] });
+
+  const lucroPrevisto = lucroEvento(ev);
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 50 }}
+      onClick={onFechar}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 520, width: "100%", maxHeight: "88vh", overflowY: "auto" }}
+      >
+        <h3 className="font-display" style={{ fontSize: 20, fontWeight: 600, marginTop: 0, marginBottom: 4, color: "#33475B" }}>
+          {ev.id ? "Editar evento" : "Novo evento"}
+        </h3>
+        <p className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginTop: 0, marginBottom: 16 }}>Produtora</p>
+
+        <Field label="Nome do evento">
+          <input style={inputStyle} value={ev.nome} onChange={set("nome")} placeholder="ex: Casamento Beatriz & João" />
+        </Field>
+
+        <div style={{ marginTop: 12 }}>
+          <Field label="Empresa contratante">
+            <input
+              style={inputStyle}
+              list="lista-empresas-produtora"
+              value={ev.empresaNome !== undefined ? ev.empresaNome : (clientesProdutora.find((c) => c.id === ev.empresaId)?.nome || "")}
+              onChange={(e) => setEvento({ ...ev, empresaNome: e.target.value, empresaId: null })}
+              placeholder="digite ou escolha uma já cadastrada"
+            />
+            <datalist id="lista-empresas-produtora">
+              {clientesProdutora.map((c) => <option key={c.id} value={c.nome} />)}
+            </datalist>
+          </Field>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+          <Field label="Data de início">
+            <input type="date" style={inputStyle} value={ev.dataInicio} onChange={set("dataInicio")} />
+          </Field>
+          <Field label="Data de fim">
+            <input type="date" style={inputStyle} value={ev.dataFim} onChange={set("dataFim")} />
+          </Field>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <Field label="Status">
+            <select style={inputStyle} value={ev.status} onChange={set("status")}>
+              {STATUS_EVENTO.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </Field>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+          <Field label="Valor faturado (R$)">
+            <input type="number" style={inputStyle} value={ev.valorFaturado === 0 ? "" : ev.valorFaturado} onChange={setNum("valorFaturado")} />
+          </Field>
+          <Field label="Valor de nota fiscal (R$)">
+            <input type="number" style={inputStyle} value={ev.valorNotaFiscal === 0 ? "" : ev.valorNotaFiscal} onChange={setNum("valorNotaFiscal")} />
+          </Field>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+            Freelancers escalados
+          </div>
+          {freelancersEscalados.map((linha, i) => (
+            <LinhaFreelancerEvento
+              key={linha.id}
+              linha={linha}
+              onMudar={(nova) => atualizarFreelancer(i, nova)}
+              onRemover={() => removerFreelancer(i)}
+              perfis={perfis}
+              freelancers={freelancers}
+            />
+          ))}
+          <button type="button" onClick={adicionarFreelancer} style={btnGhost}>+ Adicionar freelancer</button>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+            Despesas do evento
+          </div>
+          {despesas.map((d, i) => (
+            <div key={d.id} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+              <select style={{ ...inputStyle, maxWidth: 130 }} value={d.categoria} onChange={(e) => atualizarDespesa(i, "categoria", e.target.value)}>
+                {CATEGORIAS_DESPESA_EVENTO.map((c) => <option key={c}>{c}</option>)}
+              </select>
+              <input style={{ ...inputStyle, flex: 1, minWidth: 100 }} placeholder="descrição (opcional)" value={d.nome} onChange={(e) => atualizarDespesa(i, "nome", e.target.value)} />
+              <input type="number" style={{ ...inputStyle, maxWidth: 110 }} placeholder="R$" value={d.valor === 0 ? "" : d.valor} onChange={(e) => atualizarDespesa(i, "valor", e.target.value === "" ? "" : Number(e.target.value))} />
+              <button type="button" onClick={() => removerDespesa(i)} style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 16 }}>✕</button>
+            </div>
+          ))}
+          <button type="button" onClick={adicionarDespesa} style={btnGhost}>+ Adicionar despesa</button>
+        </div>
+
+        <div style={{ marginTop: 20 }}>
+          <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+            Parcelas de pagamento
+          </div>
+          {parcelas.map((p, i) => (
+            <div key={p.id} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+              <input type="number" style={{ ...inputStyle, maxWidth: 110 }} placeholder="R$" value={p.valor === 0 ? "" : p.valor} onChange={(e) => atualizarParcela(i, "valor", e.target.value === "" ? "" : Number(e.target.value))} />
+              <input type="date" style={{ ...inputStyle, maxWidth: 150 }} value={p.vencimento} onChange={(e) => atualizarParcela(i, "vencimento", e.target.value)} />
+              <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12.5, color: "#6B6153" }}>
+                <input type="checkbox" checked={!!p.recebida} onChange={(e) => atualizarParcela(i, "recebida", e.target.checked)} />
+                recebida
+              </label>
+              <button type="button" onClick={() => removerParcela(i)} style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 16 }}>✕</button>
+            </div>
+          ))}
+          <button type="button" onClick={adicionarParcela} style={btnGhost}>+ Adicionar parcela</button>
+        </div>
+
+        <Card style={{ padding: 14, marginTop: 20, background: "#EEF2F4", borderColor: "#C7D3DA" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5 }}>
+            <span style={{ color: "#33475B" }}>Lucro previsto</span>
+            <b style={{ color: lucroPrevisto >= 0 ? "#566B4F" : "#A83B2E" }}>{fmtBRL(lucroPrevisto)}</b>
+          </div>
+          <p style={{ fontSize: 11, color: "#6B6153", margin: "6px 0 0" }}>
+            Faturado − cachês − despesas − nota fiscal
+          </p>
+        </Card>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            marginTop: 20,
+            paddingTop: 12,
+            position: "sticky",
+            bottom: -1,
+            background: "#FFFDF9",
+            borderTop: "1px solid #EFE6D4",
+          }}
+        >
+          <button onClick={onFechar} style={btnGhost}>Cancelar</button>
+          <button onClick={onSalvar} style={btnPrimarioProdutora}>Salvar evento</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, clientesProdutora, salvarClientesProdutora, perfis }) {
+  const [subTab, setSubTab] = useState("eventos");
+  const [editandoEvento, setEditandoEvento] = useState(null);
+  const [excluindoEvento, setExcluindoEvento] = useState(null);
+  const [novoFreelancerNome, setNovoFreelancerNome] = useState("");
+  const [novoFreelancerContato, setNovoFreelancerContato] = useState("");
+  const [excluindoFreelancer, setExcluindoFreelancer] = useState(null);
+  const [novaEmpresaNome, setNovaEmpresaNome] = useState("");
+  const [novaEmpresaContato, setNovaEmpresaContato] = useState("");
+  const [excluindoEmpresa, setExcluindoEmpresa] = useState(null);
+
+  const novoEvento = () =>
+    setEditandoEvento({
+      id: null,
+      nome: "",
+      empresaId: null,
+      empresaNome: "",
+      dataInicio: hoje(),
+      dataFim: hoje(),
+      valorFaturado: 0,
+      valorNotaFiscal: 0,
+      status: "Planejado",
+      freelancersEscalados: [],
+      despesas: [],
+      parcelas: [],
+    });
+
+  const salvarEdicaoEvento = () => {
+    let ev = editandoEvento;
+    if (!ev.nome.trim()) return;
+
+    // resolve empresa: reaproveita se já existe (por nome), senão cria
+    let clientesProdutoraNovos = clientesProdutora;
+    const nomeEmpresaDigitado = (ev.empresaNome || "").trim();
+    if (nomeEmpresaDigitado) {
+      const existente = clientesProdutora.find((c) => c.nome.trim().toLowerCase() === nomeEmpresaDigitado.toLowerCase());
+      if (existente) {
+        ev = { ...ev, empresaId: existente.id };
+      } else {
+        const nova = { id: uid(), nome: nomeEmpresaDigitado, contato: "" };
+        clientesProdutoraNovos = [...clientesProdutora, nova];
+        ev = { ...ev, empresaId: nova.id };
+      }
+    }
+    delete ev.empresaNome;
+
+    // resolve freelancers "novos" digitados na hora
+    let freelancersNovos = freelancers;
+    const freelancersEscaladosResolvidos = (ev.freelancersEscalados || []).map((f) => {
+      if (f.origem === "novo" && f.nome.trim()) {
+        const novoFreelancer = { id: uid(), nome: f.nome.trim(), contato: "" };
+        freelancersNovos = [...freelancersNovos, novoFreelancer];
+        return { ...f, origem: "freelancer", refId: novoFreelancer.id };
+      }
+      return f;
+    }).filter((f) => f.origem === "equipe" || f.origem === "freelancer");
+    ev = { ...ev, freelancersEscalados: freelancersEscaladosResolvidos };
+
+    const salvo = ev.id ? ev : { ...ev, id: uid() };
+    const novosEventos = ev.id ? eventos.map((e) => (e.id === ev.id ? salvo : e)) : [...eventos, salvo];
+
+    salvarEventos(novosEventos);
+    if (clientesProdutoraNovos !== clientesProdutora) salvarClientesProdutora(clientesProdutoraNovos);
+    if (freelancersNovos !== freelancers) salvarFreelancers(freelancersNovos);
+    setEditandoEvento(null);
+  };
+
+  const excluirEvento = () => {
+    salvarEventos(eventos.filter((e) => e.id !== excluindoEvento.id));
+    setExcluindoEvento(null);
+  };
+
+  const nomeEmpresa = (id) => clientesProdutora.find((c) => c.id === id)?.nome || "—";
+
+  const totalFaturadoGeral = eventos.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
+  const totalLucroGeral = eventos.reduce((s, ev) => s + lucroEvento(ev), 0);
+  const totalAReceberGeral = eventos.reduce(
+    (s, ev) => s + (ev.parcelas || []).filter((p) => !p.recebida).reduce((s2, p) => s2 + (Number(p.valor) || 0), 0),
+    0
+  );
+
+  const adicionarFreelancer = () => {
+    const nome = novoFreelancerNome.trim();
+    if (!nome) return;
+    salvarFreelancers([...freelancers, { id: uid(), nome, contato: novoFreelancerContato.trim() }]);
+    setNovoFreelancerNome("");
+    setNovoFreelancerContato("");
+  };
+
+  const adicionarEmpresa = () => {
+    const nome = novaEmpresaNome.trim();
+    if (!nome) return;
+    salvarClientesProdutora([...clientesProdutora, { id: uid(), nome, contato: novaEmpresaContato.trim() }]);
+    setNovaEmpresaNome("");
+    setNovaEmpresaContato("");
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+        {[["eventos", "Eventos"], ["clientes", "Clientes"], ["freelancers", "Freelancers"]].map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setSubTab(key)}
+            style={{
+              background: subTab === key ? COR_PRODUTORA : "transparent",
+              color: subTab === key ? "#FBF4E9" : "#33475B",
+              border: `1px solid ${COR_PRODUTORA}`,
+              borderRadius: 999,
+              padding: "6px 16px",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === "eventos" && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 20 }}>
+            <StatCard label="Faturado (total)" value={fmtBRL(totalFaturadoGeral)} accent={COR_PRODUTORA} />
+            <StatCard label="Lucro (total)" value={fmtBRL(totalLucroGeral)} accent="#566B4F" />
+            <StatCard label="A receber" value={fmtBRL(totalAReceberGeral)} accent="#B9862E" />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+            <button onClick={novoEvento} style={btnPrimarioProdutora}>+ Novo evento</button>
+          </div>
+
+          <div style={{ display: "grid", gap: 10 }}>
+            {eventos
+              .slice()
+              .sort((a, b) => (a.dataInicio < b.dataInicio ? 1 : -1))
+              .map((ev) => (
+                <Card key={ev.id} style={{ padding: 16, borderColor: "#DCCFB2" }}>
+                  <div onClick={() => setEditandoEvento({ ...ev, empresaNome: nomeEmpresa(ev.empresaId) === "—" ? "" : nomeEmpresa(ev.empresaId) })} style={{ cursor: "pointer" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                      <div>
+                        <div className="font-display" style={{ fontSize: 16.5, fontWeight: 600 }}>{ev.nome}</div>
+                        <div style={{ fontSize: 12.5, color: "#6B6153", marginTop: 2 }}>
+                          {nomeEmpresa(ev.empresaId)} · {fmtData(ev.dataInicio)}
+                          {ev.dataFim && ev.dataFim !== ev.dataInicio && <> – {fmtData(ev.dataFim)}</>}
+                        </div>
+                      </div>
+                      <Badge color={STATUS_EVENTO_COR[ev.status] || COR_PRODUTORA}>{ev.status}</Badge>
+                    </div>
+                    <div style={{ display: "flex", gap: 18, marginTop: 12, fontSize: 13 }}>
+                      <div><span style={{ color: "#8A7F6E" }}>Faturado </span><b>{fmtBRL(ev.valorFaturado)}</b></div>
+                      <div><span style={{ color: "#8A7F6E" }}>Lucro </span><b style={{ color: lucroEvento(ev) >= 0 ? "#566B4F" : "#A83B2E" }}>{fmtBRL(lucroEvento(ev))}</b></div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                    <button onClick={() => setExcluindoEvento(ev)} style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 12 }}>
+                      Excluir
+                    </button>
+                  </div>
+                </Card>
+              ))}
+            {eventos.length === 0 && (
+              <Card style={{ padding: 24, textAlign: "center", color: "#8A7F6E", fontSize: 13.5 }}>
+                Nenhum evento cadastrado ainda.
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
+
+      {subTab === "clientes" && (
+        <div>
+          <Card style={{ padding: 16, marginBottom: 18 }}>
+            <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+              Nova empresa
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input style={{ ...inputStyle, flex: 2, minWidth: 140 }} placeholder="Nome da empresa" value={novaEmpresaNome} onChange={(e) => setNovaEmpresaNome(e.target.value)} />
+              <input style={{ ...inputStyle, flex: 1, minWidth: 120 }} placeholder="Contato (opcional)" value={novaEmpresaContato} onChange={(e) => setNovaEmpresaContato(e.target.value)} />
+              <button onClick={adicionarEmpresa} style={{ ...btnPrimarioProdutora, marginTop: 0 }}>Adicionar</button>
+            </div>
+          </Card>
+          <div style={{ display: "grid", gap: 10 }}>
+            {clientesProdutora.map((c) => {
+              const eventosDaEmpresa = eventos.filter((ev) => ev.empresaId === c.id);
+              const totalHistorico = eventosDaEmpresa.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
+              return (
+                <Card key={c.id} style={{ padding: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14.5 }}>{c.nome}</div>
+                      {c.contato && <div style={{ fontSize: 12, color: "#8A7F6E" }}>{c.contato}</div>}
+                    </div>
+                    <button onClick={() => setExcluindoEmpresa(c)} style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 12.5 }}>
+                      Excluir
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12.5, color: "#6B6153" }}>
+                    <span>{eventosDaEmpresa.length} evento(s)</span>
+                    <span>Total faturado: <b>{fmtBRL(totalHistorico)}</b></span>
+                  </div>
+                </Card>
+              );
+            })}
+            {clientesProdutora.length === 0 && (
+              <Card style={{ padding: 24, textAlign: "center", color: "#8A7F6E", fontSize: 13.5 }}>Nenhuma empresa cadastrada ainda.</Card>
+            )}
+          </div>
+        </div>
+      )}
+
+      {subTab === "freelancers" && (
+        <div>
+          <Card style={{ padding: 16, marginBottom: 18 }}>
+            <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+              Novo freelancer
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input style={{ ...inputStyle, flex: 2, minWidth: 140 }} placeholder="Nome" value={novoFreelancerNome} onChange={(e) => setNovoFreelancerNome(e.target.value)} />
+              <input style={{ ...inputStyle, flex: 1, minWidth: 120 }} placeholder="Contato (opcional)" value={novoFreelancerContato} onChange={(e) => setNovoFreelancerContato(e.target.value)} />
+              <button onClick={adicionarFreelancer} style={{ ...btnPrimarioProdutora, marginTop: 0 }}>Adicionar</button>
+            </div>
+          </Card>
+          <div style={{ display: "grid", gap: 10 }}>
+            {freelancers.map((f) => {
+              const participacoes = eventos.filter((ev) => (ev.freelancersEscalados || []).some((fe) => fe.origem === "freelancer" && fe.refId === f.id));
+              const totalRecebido = participacoes.reduce((s, ev) => {
+                const linha = (ev.freelancersEscalados || []).find((fe) => fe.origem === "freelancer" && fe.refId === f.id);
+                return s + (linha && linha.recebido ? Number(linha.cache) || 0 : 0);
+              }, 0);
+              return (
+                <Card key={f.id} style={{ padding: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14.5 }}>{f.nome}</div>
+                      {f.contato && <div style={{ fontSize: 12, color: "#8A7F6E" }}>{f.contato}</div>}
+                    </div>
+                    <button onClick={() => setExcluindoFreelancer(f)} style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 12.5 }}>
+                      Excluir
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12.5, color: "#6B6153" }}>
+                    <span>{participacoes.length} evento(s)</span>
+                    <span>Total recebido: <b>{fmtBRL(totalRecebido)}</b></span>
+                  </div>
+                </Card>
+              );
+            })}
+            {freelancers.length === 0 && (
+              <Card style={{ padding: 24, textAlign: "center", color: "#8A7F6E", fontSize: 13.5 }}>Nenhum freelancer cadastrado ainda.</Card>
+            )}
+          </div>
+        </div>
+      )}
+
+      {editandoEvento && (
+        <ModalEvento
+          evento={editandoEvento}
+          setEvento={setEditandoEvento}
+          onSalvar={salvarEdicaoEvento}
+          onFechar={() => setEditandoEvento(null)}
+          perfis={perfis}
+          freelancers={freelancers}
+          clientesProdutora={clientesProdutora}
+        />
+      )}
+
+      {excluindoEvento && (
+        <ConfirmarExclusao
+          titulo="Excluir evento?"
+          mensagem={`Isso vai apagar "${excluindoEvento.nome}" e todos os dados financeiros dele permanentemente.`}
+          onCancelar={() => setExcluindoEvento(null)}
+          onConfirmar={excluirEvento}
+        />
+      )}
+
+      {excluindoEmpresa && (
+        <ConfirmarExclusao
+          titulo="Excluir empresa?"
+          mensagem={`Isso vai apagar "${excluindoEmpresa.nome}" do cadastro. Os eventos já registrados não são apagados.`}
+          onCancelar={() => setExcluindoEmpresa(null)}
+          onConfirmar={() => {
+            salvarClientesProdutora(clientesProdutora.filter((c) => c.id !== excluindoEmpresa.id));
+            setExcluindoEmpresa(null);
+          }}
+        />
+      )}
+
+      {excluindoFreelancer && (
+        <ConfirmarExclusao
+          titulo="Excluir freelancer?"
+          mensagem={`Isso vai apagar "${excluindoFreelancer.nome}" do cadastro. Os eventos já registrados não são apagados.`}
+          onCancelar={() => setExcluindoFreelancer(null)}
+          onConfirmar={() => {
+            salvarFreelancers(freelancers.filter((f) => f.id !== excluindoFreelancer.id));
+            setExcluindoFreelancer(null);
+          }}
+        />
+      )}
     </div>
   );
 }
