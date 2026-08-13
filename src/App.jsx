@@ -1591,8 +1591,11 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema, eventos = [], free
     if (p.recebido !== false) bucket.estudioRecebido += Number(p.valor) || 0;
     else bucket.estudioPendente += Number(p.valor) || 0;
   });
+  const nomeUsuarioNorm = (usuario.nome || "").trim().toLowerCase();
+  const ehMinhaEscala = (f) =>
+    (f.origem === "equipe" && f.refId === usuario.id) || (f.nome || "").trim().toLowerCase() === nomeUsuarioNorm;
   eventos.forEach((ev) => {
-    const escala = (ev.freelancersEscalados || []).find((f) => f.origem === "equipe" && f.refId === usuario.id);
+    const escala = (ev.freelancersEscalados || []).find(ehMinhaEscala);
     if (!escala || !ev.dataInicio) return;
     const mes = ev.dataInicio.slice(0, 7);
     const bucket = garantirMes(mes);
@@ -1618,9 +1621,9 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema, eventos = [], free
     .reduce((s, [, m]) => s + m.estudioRecebido + m.produtoraRecebido, 0);
 
   const meusEventos = eventos
-    .filter((ev) => (ev.freelancersEscalados || []).some((f) => f.origem === "equipe" && f.refId === usuario.id))
+    .filter((ev) => (ev.freelancersEscalados || []).some(ehMinhaEscala))
     .map((ev) => {
-      const minhaEscala = (ev.freelancersEscalados || []).find((f) => f.origem === "equipe" && f.refId === usuario.id);
+      const minhaEscala = (ev.freelancersEscalados || []).find(ehMinhaEscala);
       return { ...ev, meuCache: minhaEscala?.cache || 0, meuRecebido: !!minhaEscala?.recebido };
     })
     .sort((a, b) => (a.dataInicio < b.dataInicio ? -1 : 1));
@@ -6615,7 +6618,11 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
             </select>
           </Field>
           <Field label="Segmento">
-            <select style={inputStyle} value={p.segmento || ""} onChange={set("segmento")}>
+            <select
+              style={inputStyle}
+              value={p.segmento || ""}
+              onChange={(e) => setProducao({ ...p, segmento: e.target.value, qtdPrato: e.target.value === "Gastronomia" ? p.qtdPrato : 0 })}
+            >
               <option value="">— nenhum —</option>
               {segmentosDisponiveis.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -6723,7 +6730,9 @@ function ModalProducao({ producao, setProducao, onSalvar, onFechar, modelos, seg
           </div>
           <Field label="Qtd. criativos de vídeo"><input type="number" style={inputStyle} value={p.lookbooks} onChange={setNum("lookbooks")} /></Field>
           <Field label="Qtd. vídeos lookbook"><input type="number" style={inputStyle} value={p.videos} onChange={setNum("videos")} /></Field>
-          <Field label="Qtd. prato (gastronomia)"><input type="number" style={inputStyle} value={p.qtdPrato} onChange={setNum("qtdPrato")} /></Field>
+          {p.segmento === "Gastronomia" && (
+            <Field label="Qtd. prato (gastronomia)"><input type="number" style={inputStyle} value={p.qtdPrato} onChange={setNum("qtdPrato")} /></Field>
+          )}
           <Field label="Qtd. foto corporativa"><input type="number" style={inputStyle} value={p.qtdFotoCorporativa} onChange={setNum("qtdFotoCorporativa")} /></Field>
           <Field label="Editor de foto">
             <CampoResponsavel capacidade="Editor de foto" valor={p.editor} onChange={(v) => setProducao({ ...p, editor: v })} perfis={perfis} />
@@ -7204,6 +7213,21 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
 
   const nomeEmpresa = (id) => clientesProdutora.find((c) => c.id === id)?.nome || "—";
 
+  const linkGoogleAgenda = (ev) => {
+    const inicio = (ev.dataInicio || hoje()).replace(/-/g, "");
+    const fimBase = new Date((ev.dataFim || ev.dataInicio || hoje()) + "T00:00:00");
+    fimBase.setDate(fimBase.getDate() + 1);
+    const fim = fimBase.toISOString().slice(0, 10).replace(/-/g, "");
+    const params = new URLSearchParams({
+      action: "TEMPLATE",
+      text: ev.nome || "Evento",
+      dates: `${inicio}/${fim}`,
+      details: `Produtora — ${nomeEmpresa(ev.empresaId)}`,
+      location: ev.cidade || "",
+    });
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  };
+
   const totalFaturadoGeral = eventos.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
   const totalLucroGeral = eventos.reduce((s, ev) => s + lucroEvento(ev), 0);
   const totalAReceberGeral = eventos.reduce(
@@ -7309,7 +7333,16 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                       <div><span style={{ color: "#8A7F6E" }}>Lucro </span><b style={{ color: lucroEvento(ev) >= 0 ? "#566B4F" : "#A83B2E" }}>{fmtBRL(lucroEvento(ev))}</b></div>
                     </div>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, marginTop: 10 }}>
+                    <a
+                      href={linkGoogleAgenda(ev)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ color: COR_PRODUTORA, fontSize: 12, textDecoration: "none" }}
+                    >
+                      📅 Adicionar ao Google Agenda
+                    </a>
                     <button onClick={() => setExcluindoEvento(ev)} style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 12 }}>
                       Excluir
                     </button>
