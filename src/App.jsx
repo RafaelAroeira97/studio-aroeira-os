@@ -7374,6 +7374,11 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
             {clientesProdutora.map((c) => {
               const eventosDaEmpresa = eventos.filter((ev) => ev.empresaId === c.id);
               const totalHistorico = eventosDaEmpresa.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
+              const totalRecebidoEmpresa = eventosDaEmpresa.reduce((s, ev) => s + totalRecebidoEvento(ev), 0);
+              const totalAReceberEmpresa = eventosDaEmpresa.reduce(
+                (s, ev) => s + (ev.parcelas || []).filter((p) => !p.recebida).reduce((s2, p) => s2 + (Number(p.valor) || 0), 0),
+                0
+              );
               const eventosComoFornecedora = eventos.filter((ev) => (ev.freelancersEscalados || []).some((f) => f.origem === "empresa" && f.refId === c.id));
               const totalPagoComoFornecedora = eventosComoFornecedora.reduce((s, ev) => {
                 const linha = (ev.freelancersEscalados || []).find((f) => f.origem === "empresa" && f.refId === c.id);
@@ -7393,6 +7398,10 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                   <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12.5, color: "#6B6153", flexWrap: "wrap" }}>
                     <span>{eventosDaEmpresa.length} evento(s) como cliente</span>
                     <span>Total faturado: <b>{fmtBRL(totalHistorico)}</b></span>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, marginTop: 4, fontSize: 12.5, flexWrap: "wrap" }}>
+                    <span>Recebido: <b style={{ color: "#566B4F" }}>{fmtBRL(totalRecebidoEmpresa)}</b></span>
+                    {totalAReceberEmpresa > 0 && <span>A receber: <b style={{ color: "#B9862E" }}>{fmtBRL(totalAReceberEmpresa)}</b></span>}
                   </div>
                   {eventosComoFornecedora.length > 0 && (
                     <div style={{ marginTop: 6, fontSize: 12.5, color: COR_PRODUTORA, background: "#EEF2F4", padding: "6px 10px", borderRadius: 8 }}>
@@ -7541,6 +7550,10 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                 const linha = (ev.freelancersEscalados || []).find((fe) => fe.origem === "freelancer" && fe.refId === f.id);
                 return s + (linha && linha.recebido ? Number(linha.cache) || 0 : 0);
               }, 0);
+              const totalAPagar = participacoes.reduce((s, ev) => {
+                const linha = (ev.freelancersEscalados || []).find((fe) => fe.origem === "freelancer" && fe.refId === f.id);
+                return s + (linha && !linha.recebido ? Number(linha.cache) || 0 : 0);
+              }, 0);
               return (
                 <Card key={f.id} style={{ padding: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -7552,9 +7565,10 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                       Excluir
                     </button>
                   </div>
-                  <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12.5, color: "#6B6153" }}>
+                  <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12.5, color: "#6B6153", flexWrap: "wrap" }}>
                     <span>{participacoes.length} evento(s)</span>
-                    <span>Total recebido: <b>{fmtBRL(totalRecebido)}</b></span>
+                    <span>Recebido: <b style={{ color: "#566B4F" }}>{fmtBRL(totalRecebido)}</b></span>
+                    {totalAPagar > 0 && <span>A pagar: <b style={{ color: "#B9862E" }}>{fmtBRL(totalAPagar)}</b></span>}
                   </div>
                 </Card>
               );
