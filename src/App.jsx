@@ -1718,7 +1718,7 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema, eventos = [], free
                     <div style={{ fontSize: 13 }}>A receber: <b style={{ color: "#B9862E" }}>{fmtBRL(d.estudioPendente)}</b></div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 11.5, color: "#33475B", fontWeight: 700, marginBottom: 3 }}>🎪 Produtora</div>
+                    <div style={{ fontSize: 11.5, color: "#33475B", fontWeight: 700, marginBottom: 3 }}>🎞️ Produtora</div>
                     <div style={{ fontSize: 13 }}>Recebido: <b style={{ color: "#566B4F" }}>{fmtBRL(d.produtoraRecebido)}</b></div>
                     <div style={{ fontSize: 13 }}>A receber: <b style={{ color: "#B9862E" }}>{fmtBRL(d.produtoraPendente)}</b></div>
                   </div>
@@ -1765,7 +1765,7 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema, eventos = [], free
                   {eventosDoDia.map((ev) => (
                     <div key={ev.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, flexWrap: "wrap", gap: 4 }}>
                       <span>
-                        🎪 <b>{ev.nome}</b>
+                        🎞️ <b>{ev.nome}</b>
                       </span>
                       <Badge color={COR_PRODUTORA}>Evento</Badge>
                     </div>
@@ -2987,6 +2987,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
   const [novaDespesaVencimento, setNovaDespesaVencimento] = useState("");
   const [mostrarRecorrente, setMostrarRecorrente] = useState(false);
   const [anoFinanceiro, setAnoFinanceiro] = useState(hoje().slice(0, 4));
+  const [mesDetalhe, setMesDetalhe] = useState(null);
 
   const anosDisponiveisFin = Array.from(new Set(producoes.map((p) => (p.data || "").slice(0, 4)).filter(Boolean))).sort().reverse();
   if (!anosDisponiveisFin.includes(hoje().slice(0, 4))) anosDisponiveisFin.unshift(hoje().slice(0, 4));
@@ -3194,7 +3195,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
           <div>Faturado total: <b>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.total, 0))}</b></div>
           <div>Lucro final: <b style={{ color: "#566B4F" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.lucro, 0))}</b></div>
           <div>🏠 Estúdio: <b>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.estudio, 0))}</b></div>
-          <div>🎪 Produtora: <b>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.produtora, 0))}</b></div>
+          <div>🎞️ Produtora: <b>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.produtora, 0))}</b></div>
           <div>Em aberto: <b style={{ color: "#B9862E" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.emAberto, 0))}</b></div>
           <div>Despesas: <b style={{ color: "#A83B2E" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.despesas, 0))}</b></div>
         </div>
@@ -3202,7 +3203,11 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
 
       <div style={{ display: "grid", gap: 8, marginBottom: 26 }}>
         {dadosMesFinanceiro.map((d) => (
-          <Card key={d.mes} style={{ padding: "12px 14px", opacity: d.total === 0 && d.despesas === 0 ? 0.5 : 1 }}>
+          <Card
+            key={d.mes}
+            onClick={() => setMesDetalhe(d)}
+            style={{ padding: "12px 14px", opacity: d.total === 0 && d.despesas === 0 ? 0.5 : 1, cursor: "pointer" }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
               <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase" }}>{d.mes}</div>
               <div style={{ fontSize: 12.5, color: "#8A7F6E" }}>
@@ -3213,7 +3218,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
               <div>Total: <b>{fmtBRL(d.total)}</b></div>
               <div>Em aberto: <b style={{ color: "#B9862E" }}>{fmtBRL(d.emAberto)}</b></div>
               <div>🏠 Estúdio: <b>{fmtBRL(d.estudio)}</b></div>
-              <div>🎪 Produtora: <b>{d.produtora ? fmtBRL(d.produtora) : "—"}</b></div>
+              <div>🎞️ Produtora: <b>{d.produtora ? fmtBRL(d.produtora) : "—"}</b></div>
               <div>Despesas: <b style={{ color: "#A83B2E" }}>{fmtBRL(d.despesas)}</b></div>
             </div>
           </Card>
@@ -3663,6 +3668,114 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         </table>
       </Card>
       )}
+
+      {mesDetalhe && (() => {
+        const producoesMes = producoesFaturaveis.filter((p) => (p.data || "").startsWith(mesDetalhe.mesStr));
+        const mensalidadesMes = todasMensalidades.filter((m) => m.mes === mesDetalhe.mesStr);
+        const eventosMes = eventos.filter((ev) => (ev.dataInicio || "").startsWith(mesDetalhe.mesStr));
+        const pagamentosFuncionariosMes = todosOsPagamentosFuncionarios.filter((p) => p.mes === mesDetalhe.mesStr);
+        const despesasGeraisMes = despesasGerais.filter((d) => d.mes === mesDetalhe.mesStr);
+        const parcelasAbertoMes = eventosMes.flatMap((ev) =>
+          (ev.parcelas || []).filter((p) => !p.recebida).map((p) => ({ ...p, evento: ev.nome }))
+        );
+        return (
+          <div
+            style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 50 }}
+            onClick={() => setMesDetalhe(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 560, width: "100%", maxHeight: "84vh", overflowY: "auto" }}
+            >
+              <h3 className="font-display" style={{ fontSize: 20, fontWeight: 600, marginTop: 0, marginBottom: 4 }}>
+                {mesDetalhe.mes} {anoFinanceiro}
+              </h3>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, margin: "14px 0 20px" }}>
+                <StatCard label="Total" value={fmtBRL(mesDetalhe.total)} />
+                <StatCard label="Lucro" value={fmtBRL(mesDetalhe.lucro)} accent={mesDetalhe.lucro >= 0 ? "#566B4F" : "#A83B2E"} />
+                <StatCard label="Em aberto" value={fmtBRL(mesDetalhe.emAberto)} accent="#B9862E" />
+                <StatCard label="Despesas" value={fmtBRL(mesDetalhe.despesas)} accent="#A83B2E" />
+              </div>
+
+              <SectionTitle title="🏠 Estúdio — produções do mês" />
+              <div style={{ display: "grid", gap: 6, marginBottom: 20 }}>
+                {producoesMes.map((p) => (
+                  <Card key={p.id} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+                    <span style={{ fontSize: 13 }}>{fmtData(p.data)} · {p.cliente}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className="font-mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{fmtBRL(totalProducao(p, precos))}</span>
+                      <Badge color={p.pagamentoStatus === "Pago" ? "#566B4F" : "#B9862E"}>{p.pagamentoStatus}</Badge>
+                    </div>
+                  </Card>
+                ))}
+                {mensalidadesMes.map((m, i) => (
+                  <Card key={`mens-${i}`} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+                    <span style={{ fontSize: 13 }}>{m.cliente} · mensalidade fixa</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className="font-mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{fmtBRL(m.valor)}</span>
+                      <Badge color={m.pago ? "#566B4F" : "#B9862E"}>{m.pago ? "Pago" : "Em aberto"}</Badge>
+                    </div>
+                  </Card>
+                ))}
+                {producoesMes.length === 0 && mensalidadesMes.length === 0 && (
+                  <p style={{ fontSize: 12.5, color: "#8A7F6E", margin: 0 }}>Nada lançado do Estúdio nesse mês.</p>
+                )}
+              </div>
+
+              <SectionTitle title="🎞️ Produtora — eventos do mês" />
+              <div style={{ display: "grid", gap: 6, marginBottom: 20 }}>
+                {eventosMes.map((ev) => (
+                  <Card key={ev.id} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+                    <span style={{ fontSize: 13 }}>{fmtData(ev.dataInicio)} · {ev.nome}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className="font-mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{fmtBRL(ev.valorFaturado)}</span>
+                      <Badge color={STATUS_EVENTO_COR[ev.status] || COR_PRODUTORA}>{ev.status}</Badge>
+                    </div>
+                  </Card>
+                ))}
+                {eventosMes.length === 0 && <p style={{ fontSize: 12.5, color: "#8A7F6E", margin: 0 }}>Nenhum evento nesse mês.</p>}
+              </div>
+
+              {parcelasAbertoMes.length > 0 && (
+                <>
+                  <SectionTitle title="Parcelas em aberto (Produtora)" />
+                  <div style={{ display: "grid", gap: 6, marginBottom: 20 }}>
+                    {parcelasAbertoMes.map((p, i) => (
+                      <Card key={i} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span>{p.evento}{p.vencimento && <> · vence {fmtData(p.vencimento)}</>}</span>
+                        <b style={{ color: "#B9862E" }}>{fmtBRL(p.valor)}</b>
+                      </Card>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <SectionTitle title="Despesas do mês" />
+              <div style={{ display: "grid", gap: 6 }}>
+                {pagamentosFuncionariosMes.map((p, i) => (
+                  <Card key={`func-${i}`} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                    <span>👤 {p.funcionario}</span>
+                    <b style={{ color: "#A83B2E" }}>{fmtBRL(p.valor)}</b>
+                  </Card>
+                ))}
+                {despesasGeraisMes.map((d) => (
+                  <Card key={d.id} style={{ padding: "9px 12px", display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                    <span>{d.nome || d.categoria} <span style={{ color: "#8A7F6E", fontSize: 11.5 }}>· {d.categoria}</span></span>
+                    <b style={{ color: "#A83B2E" }}>{fmtBRL(d.valor)}</b>
+                  </Card>
+                ))}
+                {pagamentosFuncionariosMes.length === 0 && despesasGeraisMes.length === 0 && (
+                  <p style={{ fontSize: 12.5, color: "#8A7F6E", margin: 0 }}>Nenhuma despesa lançada nesse mês.</p>
+                )}
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+                <button onClick={() => setMesDetalhe(null)} style={btnGhost}>Fechar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -6877,12 +6990,12 @@ function LinhaFreelancerEvento({ linha, onMudar, onRemover, perfis, freelancers,
             )}
             {freelancers.length > 0 && (
               <optgroup label="Freelancers cadastrados">
-                {freelancers.map((f) => <option key={f.id} value={`freelancer:${f.id}`}>{f.nome}</option>)}
+                {freelancers.slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((f) => <option key={f.id} value={`freelancer:${f.id}`}>{f.nome}</option>)}
               </optgroup>
             )}
             {clientesProdutora.length > 0 && (
               <optgroup label="Empresas parceiras (prestando serviço pra você)">
-                {clientesProdutora.map((c) => <option key={c.id} value={`empresa:${c.id}`}>{c.nome}</option>)}
+                {clientesProdutora.slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((c) => <option key={c.id} value={`empresa:${c.id}`}>{c.nome}</option>)}
               </optgroup>
             )}
             <option value="__novo__">+ novo freelancer (digitar nome)</option>
@@ -6997,7 +7110,7 @@ function ModalEvento({ evento, setEvento, onSalvar, onFechar, perfis, freelancer
               placeholder="digite ou escolha uma já cadastrada"
             />
             <datalist id="lista-empresas-produtora">
-              {clientesProdutora.map((c) => <option key={c.id} value={c.nome} />)}
+              {clientesProdutora.slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((c) => <option key={c.id} value={c.nome} />)}
             </datalist>
           </Field>
         </div>
@@ -7139,6 +7252,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
   const [editandoEvento, setEditandoEvento] = useState(null);
   const [excluindoEvento, setExcluindoEvento] = useState(null);
   const [filtroStatusEvento, setFiltroStatusEvento] = useState(null);
+  const [buscaEvento, setBuscaEvento] = useState("");
   const [verAReceber, setVerAReceber] = useState(false);
   const [abertoPagamentosFreelancer, setAbertoPagamentosFreelancer] = useState(false);
   const [filtroPagamentoFreelancer, setFiltroPagamentoFreelancer] = useState("pendentes");
@@ -7307,13 +7421,24 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
             })}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+            <input
+              style={{ ...inputStyle, flex: 1, minWidth: 200 }}
+              placeholder="Buscar por evento ou empresa..."
+              value={buscaEvento}
+              onChange={(e) => setBuscaEvento(e.target.value)}
+            />
             <button onClick={novoEvento} style={btnPrimarioProdutora}>+ Novo evento</button>
           </div>
 
           <div style={{ display: "grid", gap: 10 }}>
             {eventos
               .filter((ev) => !filtroStatusEvento || ev.status === filtroStatusEvento)
+              .filter((ev) => {
+                if (!buscaEvento.trim()) return true;
+                const termo = buscaEvento.trim().toLowerCase();
+                return (ev.nome || "").toLowerCase().includes(termo) || nomeEmpresa(ev.empresaId).toLowerCase().includes(termo);
+              })
               .slice()
               .sort((a, b) => (a.dataInicio < b.dataInicio ? 1 : -1))
               .map((ev) => (
@@ -7351,9 +7476,19 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                   </div>
                 </Card>
               ))}
-            {eventos.filter((ev) => !filtroStatusEvento || ev.status === filtroStatusEvento).length === 0 && (
+            {eventos
+              .filter((ev) => !filtroStatusEvento || ev.status === filtroStatusEvento)
+              .filter((ev) => {
+                if (!buscaEvento.trim()) return true;
+                const termo = buscaEvento.trim().toLowerCase();
+                return (ev.nome || "").toLowerCase().includes(termo) || nomeEmpresa(ev.empresaId).toLowerCase().includes(termo);
+              }).length === 0 && (
               <Card style={{ padding: 24, textAlign: "center", color: "#8A7F6E", fontSize: 13.5 }}>
-                {filtroStatusEvento ? `Nenhum evento com status "${filtroStatusEvento}".` : "Nenhum evento cadastrado ainda."}
+                {buscaEvento.trim()
+                  ? `Nenhum evento encontrado para "${buscaEvento}".`
+                  : filtroStatusEvento
+                  ? `Nenhum evento com status "${filtroStatusEvento}".`
+                  : "Nenhum evento cadastrado ainda."}
               </Card>
             )}
           </div>
@@ -7373,7 +7508,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
             </div>
           </Card>
           <div style={{ display: "grid", gap: 10 }}>
-            {clientesProdutora.map((c) => {
+            {clientesProdutora.slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((c) => {
               const eventosDaEmpresa = eventos.filter((ev) => ev.empresaId === c.id);
               const totalHistorico = eventosDaEmpresa.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
               const totalRecebidoEmpresa = eventosDaEmpresa.reduce((s, ev) => s + totalRecebidoEvento(ev), 0);
@@ -7591,7 +7726,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
             </div>
           </Card>
           <div style={{ display: "grid", gap: 10 }}>
-            {freelancers.map((f) => {
+            {freelancers.slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((f) => {
               const participacoes = eventos.filter((ev) => (ev.freelancersEscalados || []).some((fe) => fe.origem === "freelancer" && fe.refId === f.id));
               const totalRecebido = participacoes.reduce((s, ev) => {
                 const linha = (ev.freelancersEscalados || []).find((fe) => fe.origem === "freelancer" && fe.refId === f.id);
