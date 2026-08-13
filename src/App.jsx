@@ -64,7 +64,9 @@ const btnPrimarioProdutora = { background: "#33475B", color: "#FBF4E9", border: 
 const totalCaches = (ev) => (ev.freelancersEscalados || []).reduce((s, f) => s + (Number(f.cache) || 0), 0);
 const totalDespesasEvento = (ev) => (ev.despesas || []).reduce((s, d) => s + (Number(d.valor) || 0), 0);
 const totalRecebidoEvento = (ev) => (ev.parcelas || []).filter((p) => p.recebida).reduce((s, p) => s + (Number(p.valor) || 0), 0);
-const lucroEvento = (ev) => (Number(ev.valorFaturado) || 0) - totalCaches(ev) - totalDespesasEvento(ev) - (Number(ev.valorNotaFiscal) || 0);
+const PERCENTUAL_NOTA_FISCAL = 0.07;
+const valorNotaFiscalCalculado = (ev) => (ev.emiteNotaFiscal ? Math.round((Number(ev.valorFaturado) || 0) * PERCENTUAL_NOTA_FISCAL * 100) / 100 : 0);
+const lucroEvento = (ev) => (Number(ev.valorFaturado) || 0) - totalCaches(ev) - totalDespesasEvento(ev) - valorNotaFiscalCalculado(ev);
 
 const PRECOS_PADRAO = { look: 40, lookbook: 150, video: 50, prato: 50, fotoCorporativa: 50 };
 
@@ -6940,14 +6942,27 @@ function ModalEvento({ evento, setEvento, onSalvar, onFechar, perfis, freelancer
           </Field>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+        <div style={{ marginTop: 12 }}>
           <Field label="Valor faturado (R$)">
             <input type="number" style={inputStyle} value={ev.valorFaturado === 0 ? "" : ev.valorFaturado} onChange={setNum("valorFaturado")} />
           </Field>
-          <Field label="Valor de nota fiscal (R$)">
-            <input type="number" style={inputStyle} value={ev.valorNotaFiscal === 0 ? "" : ev.valorNotaFiscal} onChange={setNum("valorNotaFiscal")} />
-          </Field>
         </div>
+
+        <Card style={{ padding: 12, marginTop: 12, background: "#F8F3E8", borderColor: "#DCCFB2" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={!!ev.emiteNotaFiscal}
+              onChange={(e) => setEvento({ ...ev, emiteNotaFiscal: e.target.checked })}
+            />
+            Esse evento emite nota fiscal (7% do faturado)
+          </label>
+          {ev.emiteNotaFiscal && (
+            <p style={{ fontSize: 12.5, color: "#6B6153", margin: "6px 0 0" }}>
+              Valor da nota: <b>{fmtBRL(valorNotaFiscalCalculado(ev))}</b> — calculado automaticamente e descontado do lucro.
+            </p>
+          )}
+        </Card>
 
         <div style={{ marginTop: 20 }}>
           <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 4 }}>
@@ -7056,7 +7071,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
       dataInicio: hoje(),
       dataFim: hoje(),
       valorFaturado: 0,
-      valorNotaFiscal: 0,
+      emiteNotaFiscal: false,
       status: "Planejado",
       freelancersEscalados: [],
       despesas: [],
