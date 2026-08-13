@@ -7142,6 +7142,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
   const [verAReceber, setVerAReceber] = useState(false);
   const [abertoPagamentosFreelancer, setAbertoPagamentosFreelancer] = useState(false);
   const [filtroPagamentoFreelancer, setFiltroPagamentoFreelancer] = useState("pendentes");
+  const [buscaNomePagamento, setBuscaNomePagamento] = useState("");
   const [novoFreelancerNome, setNovoFreelancerNome] = useState("");
   const [novoFreelancerContato, setNovoFreelancerContato] = useState("");
   const [excluindoFreelancer, setExcluindoFreelancer] = useState(null);
@@ -7431,9 +7432,12 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
               .sort((a, b) => (a.data < b.data ? 1 : -1));
             const totalPendente = lancamentos.filter((l) => !l.recebido).reduce((s, l) => s + (Number(l.cache) || 0), 0);
             const totalPago = lancamentos.filter((l) => l.recebido).reduce((s, l) => s + (Number(l.cache) || 0), 0);
-            const lancamentosFiltrados = lancamentos.filter((l) =>
-              filtroPagamentoFreelancer === "todos" ? true : filtroPagamentoFreelancer === "pendentes" ? !l.recebido : l.recebido
-            );
+            const nomesUnicos = Array.from(new Set(lancamentos.map((l) => l.nome))).sort();
+            const buscaNorm = buscaNomePagamento.trim().toLowerCase();
+            const lancamentosFiltrados = lancamentos
+              .filter((l) => (filtroPagamentoFreelancer === "todos" ? true : filtroPagamentoFreelancer === "pendentes" ? !l.recebido : l.recebido))
+              .filter((l) => !buscaNorm || l.nome.toLowerCase().includes(buscaNorm));
+            const totalFiltradoPendente = lancamentosFiltrados.filter((l) => !l.recebido).reduce((s, l) => s + (Number(l.cache) || 0), 0);
             const exportarCSV = () => {
               const linhas = [["Nome", "Origem", "Evento", "Data", "Valor", "Status"]];
               lancamentos.forEach((l) =>
@@ -7473,7 +7477,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
 
                 {abertoPagamentosFreelancer && (
                   <>
-                    <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
                       {[["pendentes", "A pagar"], ["pagos", "Pagos"], ["todos", "Todos"]].map(([key, label]) => (
                         <button
                           key={key}
@@ -7492,7 +7496,31 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                           {label}
                         </button>
                       ))}
+                      <input
+                        style={{ ...inputStyle, flex: 1, minWidth: 160, maxWidth: 240 }}
+                        placeholder="Buscar por nome (ex: Yago)"
+                        list="nomes-pagamentos-produtora"
+                        value={buscaNomePagamento}
+                        onChange={(e) => setBuscaNomePagamento(e.target.value)}
+                      />
+                      <datalist id="nomes-pagamentos-produtora">
+                        {nomesUnicos.map((n) => <option key={n} value={n} />)}
+                      </datalist>
+                      {buscaNomePagamento && (
+                        <button onClick={() => setBuscaNomePagamento("")} style={{ ...btnGhost, fontSize: 12 }}>
+                          ✕ limpar
+                        </button>
+                      )}
                     </div>
+
+                    {buscaNomePagamento && (
+                      <p style={{ fontSize: 12.5, color: "#8A7F6E", margin: "-4px 0 12px" }}>
+                        {lancamentosFiltrados.length} lançamento(s) de <b>{buscaNomePagamento}</b>
+                        {filtroPagamentoFreelancer !== "pagos" && (
+                          <> — total a pagar: <b style={{ color: "#B9862E" }}>{fmtBRL(totalFiltradoPendente)}</b></>
+                        )}
+                      </p>
+                    )}
 
                     <Card style={{ overflowX: "auto", marginBottom: 26 }}>
                       {lancamentosFiltrados.length === 0 ? (
@@ -7556,12 +7584,22 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
               }, 0);
               return (
                 <Card key={f.id} style={{ padding: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div
+                    onClick={() => {
+                      setBuscaNomePagamento(f.nome);
+                      setFiltroPagamentoFreelancer("pendentes");
+                      setAbertoPagamentosFreelancer(true);
+                    }}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                  >
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 14.5 }}>{f.nome}</div>
                       {f.contato && <div style={{ fontSize: 12, color: "#8A7F6E" }}>{f.contato}</div>}
                     </div>
-                    <button onClick={() => setExcluindoFreelancer(f)} style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 12.5 }}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setExcluindoFreelancer(f); }}
+                      style={{ background: "none", border: "none", color: "#A83B2E", cursor: "pointer", fontSize: 12.5 }}
+                    >
                       Excluir
                     </button>
                   </div>
