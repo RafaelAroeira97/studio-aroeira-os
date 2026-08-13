@@ -25,25 +25,33 @@ const STATUS_COR = {
 
 const STATUS_CONCLUIDO = "Aprovado"; // status que conta como "finalizado" em cálculos e no Quadro
 
-// uma produção só conta como concluída de verdade quando fotos E (se houver) vídeo estão aprovados
-const producaoConcluida = (p) => p.status === STATUS_CONCLUIDO && (!p.temVideo || p.statusVideo === STATUS_CONCLUIDO);
+// produções do tipo "Vídeo" ou "Reels" não geram fotos — não faz sentido mostrar status de foto pra elas
+const temFotoProducao = (p) => p.tipo !== "Vídeo" && p.tipo !== "Reels";
+
+// uma produção só conta como concluída de verdade quando fotos (se houver) E vídeo (se houver) estão aprovados
+const producaoConcluida = (p) =>
+  (!temFotoProducao(p) || p.status === STATUS_CONCLUIDO) && (!p.temVideo || p.statusVideo === STATUS_CONCLUIDO);
+
+// status "principal" pra mostrar num badge único — foto normalmente, ou vídeo quando a produção não tem foto
+const statusPrincipal = (p) => (temFotoProducao(p) ? p.status : p.statusVideo || "Agendado");
 
 // data em que a produção ficou de fato pronta (a mais tardia entre foto aprovada e vídeo aprovado)
 function dataConclusao(p) {
   if (!producaoConcluida(p)) return null;
   const historico = p.historico || [];
   const entradaFoto = [...historico].reverse().find((h) => h.status === STATUS_CONCLUIDO && h.campo !== "video");
-  if (!entradaFoto) return null;
-  let em = entradaFoto.em;
+  if (!entradaFoto && temFotoProducao(p)) return null;
+  let em = entradaFoto ? entradaFoto.em : null;
   if (p.temVideo) {
     const entradaVideo = [...historico].reverse().find((h) => h.status === STATUS_CONCLUIDO && h.campo === "video");
-    if (entradaVideo && entradaVideo.em > em) em = entradaVideo.em;
+    if (entradaVideo && (!em || entradaVideo.em > em)) em = entradaVideo.em;
   }
-  return new Date(em).toISOString().slice(0, 10);
+  return em ? new Date(em).toISOString().slice(0, 10) : null;
 }
 
 // descreve o status real de uma produção, deixando claro o que ainda falta quando ela tem foto e vídeo
 function statusDescritivo(p) {
+  if (!temFotoProducao(p)) return p.statusVideo || "Agendado";
   if (!p.temVideo) return p.status;
   if (producaoConcluida(p)) return p.status;
   const partes = [];
@@ -57,8 +65,8 @@ const STATUS_PAGAMENTO = ["Em aberto", "Pago", "Parcialmente pago", "Cancelado"]
 // ---------- Produtora (eventos) ----------
 const COR_PRODUTORA = "#33475B";
 const COR_PRODUTORA_CLARA = "#4A6478";
-const STATUS_EVENTO = ["Planejado", "Em andamento", "Concluído"];
-const STATUS_EVENTO_COR = { "Planejado": "#B9862E", "Em andamento": "#33475B", "Concluído": "#566B4F" };
+const STATUS_EVENTO = ["Planejado", "Pagamento em aberto", "Concluído"];
+const STATUS_EVENTO_COR = { "Planejado": "#B9862E", "Pagamento em aberto": "#33475B", "Concluído": "#566B4F" };
 const CATEGORIAS_DESPESA_EVENTO = ["Transporte", "Hospedagem", "Alimentação", "Outras"];
 const FUNCOES_EVENTO = ["Fotógrafo", "Filmmaker", "Editor de foto", "Editor de vídeo", "Storymaker", "Produção", "Assistente", "Outro"];
 const btnPrimarioProdutora = { background: "#33475B", color: "#FBF4E9", border: "none", padding: "9px 18px", borderRadius: 999, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 6 };
@@ -584,7 +592,10 @@ export default function StudioAroeiraOS() {
       } catch (e) {}
       try {
         const ev = await storage.get("eventos", true);
-        if (ev) setEventos(JSON.parse(ev.value));
+        if (ev) {
+          const evs = JSON.parse(ev.value).map((e) => (e.status === "Em andamento" ? { ...e, status: "Pagamento em aberto" } : e));
+          setEventos(evs);
+        }
       } catch (e) {}
       try {
         const fl = await storage.get("freelancers-produtora", true);
@@ -1745,7 +1756,7 @@ function PainelEquipe({ producoes, usuario, onAvisarProblema, eventos = [], free
                         <b>{p.horario}</b> · {p.cliente}
                         {p.localizacao && <span style={{ color: "#8A7F6E" }}> · 📍 {p.localizacao}</span>}
                       </span>
-                      <Badge color={STATUS_COR[p.status] || "#8A7F6E"}>{p.status}</Badge>
+                      <Badge color={STATUS_COR[statusPrincipal(p)] || "#8A7F6E"}>{statusPrincipal(p)}</Badge>
                     </div>
                   ))}
                   {eventosDoDia.map((ev) => (
@@ -1976,7 +1987,7 @@ function Calendario({ producoes, onEditar }) {
                   </div>
                   <div style={{ fontSize: 12, color: "#8A7F6E", marginTop: 2 }}>
                     {p.modelo && <>{p.modelo} · </>}
-                    <span style={{ color: STATUS_COR[p.status] || "#8A7F6E" }}>{p.status}</span>
+                    <span style={{ color: STATUS_COR[statusPrincipal(p)] || "#8A7F6E" }}>{statusPrincipal(p)}</span>
                   </div>
                 </Card>
               ))}
@@ -2302,72 +2313,75 @@ function Quadro({ producoes, onStatusChange, onStatusVideoChange }) {
           const ultimaAlteracao = historico[historico.length - 1];
           return (
             <Card key={p.id} style={{ padding: 14 }}>
-              <div
-                onClick={() => setAberto(expandido ? null : p.id)}
-                style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", flexWrap: "wrap" }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="font-display" style={{ fontSize: 16.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {p.cliente}
+              <div onClick={() => setAberto(expandido ? null : p.id)} style={{ cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="font-display" style={{ fontSize: 16.5, fontWeight: 600, lineHeight: 1.25 }}>
+                      {p.cliente}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#8A7F6E", marginTop: 2 }}>
+                      {fmtData(p.data)} · {p.tipo || "sem tipo"}
+                    </div>
+                    {p.prazo && (
+                      <div
+                        className="font-mono"
+                        style={{ fontSize: 11, fontWeight: 700, marginTop: 2, color: !producaoConcluida(p) && p.prazo < hoje() ? "#A83B2E" : "#7A2E22" }}
+                      >
+                        📦 entrega {fmtData(p.prazo)}{p.prazoHorario && ` às ${p.prazoHorario}`}
+                      </div>
+                    )}
+                    {ultimaAlteracao && (
+                      <div className="font-mono" style={{ fontSize: 10.5, color: "#B0A388", marginTop: 3 }}>
+                        por {ultimaAlteracao.por} · {fmtDataHora(ultimaAlteracao.em)}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ fontSize: 12, color: "#8A7F6E", marginTop: 2 }}>
-                    {fmtData(p.data)} · {p.tipo || "sem tipo"}
-                  </div>
-                  {p.prazo && (
-                    <div
+                  <span style={{ color: "#B0A388", fontSize: 12, flexShrink: 0, transform: expandido ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▾</span>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                  {temFotoProducao(p) && (
+                    <span
                       className="font-mono"
-                      style={{ fontSize: 11, fontWeight: 700, marginTop: 2, color: !producaoConcluida(p) && p.prazo < hoje() ? "#A83B2E" : "#7A2E22" }}
+                      title="Status das fotos"
+                      style={{
+                        fontSize: 11,
+                        letterSpacing: "0.03em",
+                        textTransform: "uppercase",
+                        padding: "5px 10px",
+                        borderRadius: 999,
+                        border: "1px solid " + cor,
+                        color: cor,
+                        whiteSpace: "nowrap",
+                      }}
                     >
-                      📦 entrega {fmtData(p.prazo)}{p.prazoHorario && ` às ${p.prazoHorario}`}
-                    </div>
+                      📷 {p.status}
+                    </span>
                   )}
-                  {ultimaAlteracao && (
-                    <div className="font-mono" style={{ fontSize: 10.5, color: "#B0A388", marginTop: 2 }}>
-                      por {ultimaAlteracao.por} · {fmtDataHora(ultimaAlteracao.em)}
-                    </div>
+                  {p.temVideo && (
+                    <span
+                      className="font-mono"
+                      title="Status do vídeo"
+                      style={{
+                        fontSize: 11,
+                        letterSpacing: "0.03em",
+                        textTransform: "uppercase",
+                        padding: "5px 10px",
+                        borderRadius: 999,
+                        border: "1px solid " + corVideo,
+                        color: corVideo,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      🎬 {p.statusVideo || "Agendado"}
+                    </span>
                   )}
                 </div>
-                <span
-                  className="font-mono"
-                  title="Status das fotos"
-                  style={{
-                    fontSize: 11,
-                    letterSpacing: "0.03em",
-                    textTransform: "uppercase",
-                    padding: "5px 10px",
-                    borderRadius: 999,
-                    border: "1px solid " + cor,
-                    color: cor,
-                    whiteSpace: "nowrap",
-                    flexShrink: 0,
-                  }}
-                >
-                  📷 {p.status}
-                </span>
-                {p.temVideo && (
-                  <span
-                    className="font-mono"
-                    title="Status do vídeo"
-                    style={{
-                      fontSize: 11,
-                      letterSpacing: "0.03em",
-                      textTransform: "uppercase",
-                      padding: "5px 10px",
-                      borderRadius: 999,
-                      border: "1px solid " + corVideo,
-                      color: corVideo,
-                      whiteSpace: "nowrap",
-                      flexShrink: 0,
-                    }}
-                  >
-                    🎬 {p.statusVideo || "Agendado"}
-                  </span>
-                )}
-                <span style={{ color: "#B0A388", fontSize: 12, transform: expandido ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▾</span>
               </div>
 
               {expandido && (
                 <div style={{ display: "grid", gap: 12, marginTop: 12, paddingTop: 12, borderTop: "1px solid #EFE6D4" }}>
+                  {temFotoProducao(p) && (
                   <div>
                     <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 6 }}>📷 Fotos</div>
                     <div style={{ display: "grid", gap: 5 }}>
@@ -2392,6 +2406,7 @@ function Quadro({ producoes, onStatusChange, onStatusVideoChange }) {
                       })}
                     </div>
                   </div>
+                  )}
 
                   {p.temVideo && (
                     <div>
@@ -2597,24 +2612,28 @@ function Producoes({ producoes, busca, setBusca, onNova, onEditar, onExcluir, on
                   )}
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }} onClick={(e) => e.stopPropagation()}>
-                  <span title="Status das fotos" style={{ fontSize: 12 }}>📷</span>
-                  <select
-                    value={p.status}
-                    onChange={(e) => onStatusChange(p.id, e.target.value)}
-                    className="font-mono"
-                    style={{
-                      fontSize: 11,
-                      letterSpacing: "0.04em",
-                      textTransform: "uppercase",
-                      padding: "4px 8px",
-                      borderRadius: 999,
-                      border: "1px solid " + (STATUS_COR[p.status] || "#8A7F6E"),
-                      color: STATUS_COR[p.status] || "#8A7F6E",
-                      background: "transparent",
-                    }}
-                  >
-                    {STATUS_PRODUCAO.map((s) => <option key={s}>{s}</option>)}
-                  </select>
+                  {temFotoProducao(p) && (
+                    <>
+                      <span title="Status das fotos" style={{ fontSize: 12 }}>📷</span>
+                      <select
+                        value={p.status}
+                        onChange={(e) => onStatusChange(p.id, e.target.value)}
+                        className="font-mono"
+                        style={{
+                          fontSize: 11,
+                          letterSpacing: "0.04em",
+                          textTransform: "uppercase",
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          border: "1px solid " + (STATUS_COR[p.status] || "#8A7F6E"),
+                          color: STATUS_COR[p.status] || "#8A7F6E",
+                          background: "transparent",
+                        }}
+                      >
+                        {STATUS_PRODUCAO.map((s) => <option key={s}>{s}</option>)}
+                      </select>
+                    </>
+                  )}
                   {p.temVideo && (
                     <>
                       <span title="Status do vídeo" style={{ fontSize: 12 }}>🎬</span>
@@ -2868,6 +2887,8 @@ const CORES_PUBLICO = {
 };
 
 function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, salvarHistoricoFinanceiro, funcionarios, salvarFuncionarios, despesasGerais, salvarDespesasGerais, modelos, salvarProducoes, cenariosDisponiveis, eventos = [] }) {
+  const [abertoPorModelo, setAbertoPorModelo] = useState(false);
+  const [abertoLancamentos, setAbertoLancamentos] = useState(false);
   const clientesApenasMensal = new Set(clientesCadastro.filter((c) => c.clienteMensal || c.apenasMensal).map((c) => c.nome));
   const producoesFaturaveis = producoes.filter((p) => !clientesApenasMensal.has(p.cliente));
 
@@ -2986,14 +3007,19 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
     const eventosMes = eventos.filter((ev) => (ev.dataInicio || "").startsWith(mesStr));
     const produtoraFaturado = eventosMes.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
     const produtoraLucro = eventosMes.reduce((s, ev) => s + lucroEvento(ev), 0);
+    const produtoraRecebido = eventosMes.reduce(
+      (s, ev) => s + (ev.parcelas || []).filter((p) => p.recebida).reduce((s2, p) => s2 + (Number(p.valor) || 0), 0),
+      0
+    );
     return {
       mes: nome,
       mesStr,
-      faturado: faturado + produtoraFaturado,
-      recebido,
+      total: faturado + produtoraFaturado,
+      estudio: faturado,
+      produtora: produtoraFaturado,
+      emAberto: faturado + produtoraFaturado - (recebido + produtoraRecebido),
       despesas: despesasMes,
       lucro: faturado - despesasMes + produtoraLucro,
-      produtora: produtoraFaturado,
     };
   });
 
@@ -3157,40 +3183,39 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
           {anosDisponiveisFin.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
       </div>
-      <Card style={{ overflowX: "auto", marginBottom: 26 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
-          <thead>
-            <tr style={{ textAlign: "left", borderBottom: "1px solid #E4D9C4" }}>
-              {["Mês", "Faturado", "Produtora", "Recebido", "Em aberto", "Despesas", "Lucro"].map((h) => (
-                <th key={h} className="font-mono" style={{ padding: "10px 12px", color: "#8A7F6E", fontWeight: 500, fontSize: 11, textTransform: "uppercase" }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {dadosMesFinanceiro.map((d) => (
-              <tr key={d.mes} style={{ borderBottom: "1px solid #F0E8D6", opacity: d.faturado === 0 && d.despesas === 0 ? 0.5 : 1 }}>
-                <td style={{ padding: "9px 12px" }}>{d.mes}</td>
-                <td style={{ padding: "9px 12px", fontWeight: 600 }}>{fmtBRL(d.faturado)}</td>
-                <td style={{ padding: "9px 12px", color: "#33475B" }}>{d.produtora ? fmtBRL(d.produtora) : "—"}</td>
-                <td style={{ padding: "9px 12px", color: "#566B4F" }}>{fmtBRL(d.recebido)}</td>
-                <td style={{ padding: "9px 12px", color: "#B9862E" }}>{fmtBRL(d.faturado - d.recebido)}</td>
-                <td style={{ padding: "9px 12px", color: "#A83B2E" }}>{fmtBRL(d.despesas)}</td>
-                <td style={{ padding: "9px 12px", fontWeight: 600, color: d.lucro >= 0 ? "#566B4F" : "#A83B2E" }}>{fmtBRL(d.lucro)}</td>
-              </tr>
-            ))}
-            <tr>
-              <td style={{ padding: "10px 12px", fontWeight: 700 }}>Total {anoFinanceiro}</td>
-              <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.faturado, 0))}</td>
-              <td style={{ padding: "10px 12px", fontWeight: 700, color: "#566B4F" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.recebido, 0))}</td>
-              <td style={{ padding: "10px 12px", fontWeight: 700, color: "#B9862E" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + (d.faturado - d.recebido), 0))}</td>
-              <td style={{ padding: "10px 12px", fontWeight: 700, color: "#A83B2E" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.despesas, 0))}</td>
-              <td style={{ padding: "10px 12px", fontWeight: 700, color: "#566B4F" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.lucro, 0))}</td>
-            </tr>
-          </tbody>
-        </table>
+      <Card style={{ padding: 16, marginBottom: 14, background: "#F8F3E8", borderColor: "#DCCFB2" }}>
+        <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
+          Total {anoFinanceiro}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 14 }}>
+          <div>Faturado total: <b>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.total, 0))}</b></div>
+          <div>Lucro final: <b style={{ color: "#566B4F" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.lucro, 0))}</b></div>
+          <div>🏠 Estúdio: <b>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.estudio, 0))}</b></div>
+          <div>🎪 Produtora: <b>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.produtora, 0))}</b></div>
+          <div>Em aberto: <b style={{ color: "#B9862E" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.emAberto, 0))}</b></div>
+          <div>Despesas: <b style={{ color: "#A83B2E" }}>{fmtBRL(dadosMesFinanceiro.reduce((s, d) => s + d.despesas, 0))}</b></div>
+        </div>
       </Card>
+
+      <div style={{ display: "grid", gap: 8, marginBottom: 26 }}>
+        {dadosMesFinanceiro.map((d) => (
+          <Card key={d.mes} style={{ padding: "12px 14px", opacity: d.total === 0 && d.despesas === 0 ? 0.5 : 1 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+              <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase" }}>{d.mes}</div>
+              <div style={{ fontSize: 12.5, color: "#8A7F6E" }}>
+                Lucro: <b style={{ color: d.lucro >= 0 ? "#566B4F" : "#A83B2E", fontSize: 14 }}>{fmtBRL(d.lucro)}</b>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 13 }}>
+              <div>Total: <b>{fmtBRL(d.total)}</b></div>
+              <div>Em aberto: <b style={{ color: "#B9862E" }}>{fmtBRL(d.emAberto)}</b></div>
+              <div>🏠 Estúdio: <b>{fmtBRL(d.estudio)}</b></div>
+              <div>🎪 Produtora: <b>{d.produtora ? fmtBRL(d.produtora) : "—"}</b></div>
+              <div>Despesas: <b style={{ color: "#A83B2E" }}>{fmtBRL(d.despesas)}</b></div>
+            </div>
+          </Card>
+        ))}
+      </div>
 
       <SectionTitle title="Looks por público" />
       <Card style={{ padding: 20, marginBottom: 26 }}>
@@ -3346,11 +3371,16 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         )}
       </Card>
 
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+      <div
+        onClick={() => setAbertoPorModelo(!abertoPorModelo)}
+        style={{ display: "flex", alignItems: "center", marginBottom: 10, cursor: "pointer" }}
+      >
+        <span style={{ fontSize: 13, color: "#8A7F6E", marginRight: 6 }}>{abertoPorModelo ? "▾" : "▸"}</span>
         <SectionTitle title="Faturamento por modelo" />
-        {dadosPorModelo.length > 0 && (
+        {abertoPorModelo && dadosPorModelo.length > 0 && (
           <button
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               const linhas = [["Modelo", "Produções", "Looks", "Valor gerado (R$)"]];
               dadosPorModelo.forEach((d) => linhas.push([d.modelo, d.producoes, d.looks, d.valorGerado.toFixed(2)]));
               const csv = linhas.map((l) => l.map((c) => `"${c}"`).join(",")).join("\n");
@@ -3370,6 +3400,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
           </button>
         )}
       </div>
+      {abertoPorModelo && (
       <Card style={{ overflowX: "auto", marginBottom: 26 }}>
         {dadosPorModelo.length === 0 ? (
           <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center", padding: 20, margin: 0 }}>
@@ -3402,6 +3433,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
           "Valor gerado" é uma estimativa (looks da produção × valor por look do modelo) — útil pra mostrar pra ela o tamanho da parceria, não é necessariamente o que foi pago.
         </p>
       </Card>
+      )}
 
       <SectionTitle title="Funcionários" />
       <Card style={{ padding: 18, marginBottom: 26, maxWidth: 560 }}>
@@ -3568,7 +3600,14 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         )}
       </Card>
 
-      <SectionTitle title="Lançamentos" />
+      <div
+        onClick={() => setAbertoLancamentos(!abertoLancamentos)}
+        style={{ display: "flex", alignItems: "center", marginBottom: 10, cursor: "pointer" }}
+      >
+        <span style={{ fontSize: 13, color: "#8A7F6E", marginRight: 6 }}>{abertoLancamentos ? "▾" : "▸"}</span>
+        <SectionTitle title="Lançamentos" />
+      </div>
+      {abertoLancamentos && (
       <Card style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
           <thead>
@@ -3620,6 +3659,7 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
           </tbody>
         </table>
       </Card>
+      )}
     </div>
   );
 }
@@ -4267,7 +4307,7 @@ function CRM({ clientes, clientesCadastro, salvarClientesCadastro, precos, segme
                     {fmtData(p.data)} · {p.tipo || "sem tipo"} · {p.looks || 0} lookbook / {p.lookbooks || 0} criativos de vídeo
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <Badge color={STATUS_COR[p.status]}>{p.status}</Badge>
+                    <Badge color={STATUS_COR[statusPrincipal(p)]}>{statusPrincipal(p)}</Badge>
                     <span className="font-mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{fmtBRL(totalProducao(p, precos))}</span>
                   </div>
                 </Card>
@@ -7089,6 +7129,10 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
   const [subTab, setSubTab] = useState("eventos");
   const [editandoEvento, setEditandoEvento] = useState(null);
   const [excluindoEvento, setExcluindoEvento] = useState(null);
+  const [filtroStatusEvento, setFiltroStatusEvento] = useState(null);
+  const [verAReceber, setVerAReceber] = useState(false);
+  const [abertoPagamentosFreelancer, setAbertoPagamentosFreelancer] = useState(false);
+  const [filtroPagamentoFreelancer, setFiltroPagamentoFreelancer] = useState("pendentes");
   const [novoFreelancerNome, setNovoFreelancerNome] = useState("");
   const [novoFreelancerContato, setNovoFreelancerContato] = useState("");
   const [excluindoFreelancer, setExcluindoFreelancer] = useState(null);
@@ -7208,10 +7252,33 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
 
       {subTab === "eventos" && (
         <div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 12 }}>
             <StatCard label="Faturado (total)" value={fmtBRL(totalFaturadoGeral)} accent={COR_PRODUTORA} />
             <StatCard label="Lucro (total)" value={fmtBRL(totalLucroGeral)} accent="#566B4F" />
-            <StatCard label="A receber" value={fmtBRL(totalAReceberGeral)} accent="#B9862E" />
+            <StatCard label="A receber" value={fmtBRL(totalAReceberGeral)} accent="#B9862E" onClick={() => setVerAReceber(true)} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+            {["Pagamento em aberto", "Concluído"].map((s) => {
+              const qtd = eventos.filter((ev) => ev.status === s).length;
+              const ativo = filtroStatusEvento === s;
+              return (
+                <Card
+                  key={s}
+                  onClick={() => setFiltroStatusEvento(ativo ? null : s)}
+                  style={{
+                    padding: "14px 16px",
+                    cursor: "pointer",
+                    borderColor: ativo ? STATUS_EVENTO_COR[s] : "#E4D9C4",
+                    borderWidth: ativo ? 2 : 1,
+                    background: ativo ? "#F8F3E8" : "#FFFDF9",
+                  }}
+                >
+                  <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase" }}>{s}</div>
+                  <div className="font-display" style={{ fontSize: 24, fontWeight: 600, color: STATUS_EVENTO_COR[s], marginTop: 4 }}>{qtd}</div>
+                </Card>
+              );
+            })}
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
@@ -7220,6 +7287,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
 
           <div style={{ display: "grid", gap: 10 }}>
             {eventos
+              .filter((ev) => !filtroStatusEvento || ev.status === filtroStatusEvento)
               .slice()
               .sort((a, b) => (a.dataInicio < b.dataInicio ? 1 : -1))
               .map((ev) => (
@@ -7248,9 +7316,9 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                   </div>
                 </Card>
               ))}
-            {eventos.length === 0 && (
+            {eventos.filter((ev) => !filtroStatusEvento || ev.status === filtroStatusEvento).length === 0 && (
               <Card style={{ padding: 24, textAlign: "center", color: "#8A7F6E", fontSize: 13.5 }}>
-                Nenhum evento cadastrado ainda.
+                {filtroStatusEvento ? `Nenhum evento com status "${filtroStatusEvento}".` : "Nenhum evento cadastrado ainda."}
               </Card>
             )}
           </div>
@@ -7310,6 +7378,119 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
 
       {subTab === "freelancers" && (
         <div>
+          {(() => {
+            const ORIGEM_LABEL = { equipe: "Equipe", freelancer: "Freelancer", empresa: "Empresa parceira" };
+            const lancamentos = eventos
+              .flatMap((ev) =>
+                (ev.freelancersEscalados || [])
+                  .filter((f) => f.nome)
+                  .map((f) => ({ ...f, evento: ev.nome, data: ev.dataInicio }))
+              )
+              .sort((a, b) => (a.data < b.data ? 1 : -1));
+            const totalPendente = lancamentos.filter((l) => !l.recebido).reduce((s, l) => s + (Number(l.cache) || 0), 0);
+            const totalPago = lancamentos.filter((l) => l.recebido).reduce((s, l) => s + (Number(l.cache) || 0), 0);
+            const lancamentosFiltrados = lancamentos.filter((l) =>
+              filtroPagamentoFreelancer === "todos" ? true : filtroPagamentoFreelancer === "pendentes" ? !l.recebido : l.recebido
+            );
+            const exportarCSV = () => {
+              const linhas = [["Nome", "Origem", "Evento", "Data", "Valor", "Status"]];
+              lancamentos.forEach((l) =>
+                linhas.push([l.nome, ORIGEM_LABEL[l.origem] || l.origem, l.evento, l.data, (Number(l.cache) || 0).toFixed(2), l.recebido ? "Pago" : "A pagar"])
+              );
+              const csv = linhas.map((l) => l.map((c) => `"${c}"`).join(",")).join("\n");
+              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `pagamentos-freelancers-${hoje()}.csv`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              URL.revokeObjectURL(url);
+            };
+
+            return (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
+                  <StatCard label="A pagar (freelancers)" value={fmtBRL(totalPendente)} accent="#B9862E" />
+                  <StatCard label="Já pago" value={fmtBRL(totalPago)} accent="#566B4F" />
+                </div>
+
+                <div
+                  onClick={() => setAbertoPagamentosFreelancer(!abertoPagamentosFreelancer)}
+                  style={{ display: "flex", alignItems: "center", marginBottom: 10, cursor: "pointer" }}
+                >
+                  <span style={{ fontSize: 13, color: "#8A7F6E", marginRight: 6 }}>{abertoPagamentosFreelancer ? "▾" : "▸"}</span>
+                  <SectionTitle title="Planilha de pagamentos" />
+                  {abertoPagamentosFreelancer && (
+                    <button onClick={(e) => { e.stopPropagation(); exportarCSV(); }} style={{ ...btnGhost, marginLeft: "auto" }}>
+                      ⬇ Exportar CSV
+                    </button>
+                  )}
+                </div>
+
+                {abertoPagamentosFreelancer && (
+                  <>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                      {[["pendentes", "A pagar"], ["pagos", "Pagos"], ["todos", "Todos"]].map(([key, label]) => (
+                        <button
+                          key={key}
+                          onClick={() => setFiltroPagamentoFreelancer(key)}
+                          style={{
+                            background: filtroPagamentoFreelancer === key ? COR_PRODUTORA : "transparent",
+                            color: filtroPagamentoFreelancer === key ? "#FBF4E9" : "#33475B",
+                            border: `1px solid ${COR_PRODUTORA}`,
+                            borderRadius: 999,
+                            padding: "5px 14px",
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <Card style={{ overflowX: "auto", marginBottom: 26 }}>
+                      {lancamentosFiltrados.length === 0 ? (
+                        <p style={{ fontSize: 13, color: "#8A7F6E", textAlign: "center", padding: 20, margin: 0 }}>
+                          Nada por aqui.
+                        </p>
+                      ) : (
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+                          <thead>
+                            <tr style={{ textAlign: "left", borderBottom: "1px solid #E4D9C4" }}>
+                              {["Nome", "Origem", "Evento", "Data", "Valor", "Status"].map((h) => (
+                                <th key={h} className="font-mono" style={{ padding: "10px 12px", color: "#8A7F6E", fontWeight: 500, fontSize: 11, textTransform: "uppercase" }}>
+                                  {h}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {lancamentosFiltrados.map((l, i) => (
+                              <tr key={i} style={{ borderBottom: "1px solid #F0E8D6" }}>
+                                <td style={{ padding: "9px 12px" }}>{l.nome}</td>
+                                <td style={{ padding: "9px 12px", color: "#8A7F6E" }}>{ORIGEM_LABEL[l.origem] || l.origem}</td>
+                                <td style={{ padding: "9px 12px" }}>{l.evento}</td>
+                                <td style={{ padding: "9px 12px" }}>{fmtData(l.data)}</td>
+                                <td style={{ padding: "9px 12px", fontWeight: 600 }}>{fmtBRL(l.cache)}</td>
+                                <td style={{ padding: "9px 12px" }}>
+                                  <Badge color={l.recebido ? "#566B4F" : "#B9862E"}>{l.recebido ? "Pago" : "A pagar"}</Badge>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </Card>
+                  </>
+                )}
+              </>
+            );
+          })()}
+
           <Card style={{ padding: 16, marginBottom: 18 }}>
             <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase", marginBottom: 8 }}>
               Novo freelancer
@@ -7395,6 +7576,51 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
             setExcluindoFreelancer(null);
           }}
         />
+      )}
+
+      {verAReceber && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 50 }}
+          onClick={() => setVerAReceber(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 480, width: "100%", maxHeight: "82vh", overflowY: "auto" }}
+          >
+            <h3 className="font-display" style={{ fontSize: 19, fontWeight: 600, marginTop: 0, marginBottom: 4, color: "#33475B" }}>
+              Quem me deve
+            </h3>
+            <p className="font-mono" style={{ fontSize: 10.5, color: "#8A7F6E", textTransform: "uppercase", marginTop: 0, marginBottom: 14 }}>
+              Parcelas ainda não recebidas
+            </p>
+            <div style={{ display: "grid", gap: 8 }}>
+              {eventos
+                .flatMap((ev) =>
+                  (ev.parcelas || [])
+                    .filter((p) => !p.recebida)
+                    .map((p) => ({ ...p, evento: ev.nome, empresa: nomeEmpresa(ev.empresaId) }))
+                )
+                .sort((a, b) => (a.vencimento || "") < (b.vencimento || "") ? -1 : 1)
+                .map((p) => (
+                  <Card key={p.id} style={{ padding: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13.5 }}>{p.empresa}</div>
+                        <div style={{ fontSize: 12, color: "#8A7F6E" }}>{p.evento}{p.vencimento && <> · vence {fmtData(p.vencimento)}</>}</div>
+                      </div>
+                      <b style={{ color: "#B9862E", fontSize: 14.5 }}>{fmtBRL(p.valor)}</b>
+                    </div>
+                  </Card>
+                ))}
+              {totalAReceberGeral === 0 && (
+                <Card style={{ padding: 20, textAlign: "center", color: "#8A7F6E", fontSize: 13.5 }}>Nada a receber no momento 🎉</Card>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+              <button onClick={() => setVerAReceber(false)} style={btnGhost}>Fechar</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
