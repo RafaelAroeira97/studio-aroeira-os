@@ -7605,6 +7605,7 @@ function Produtora({ eventos, salvarEventos, freelancers, salvarFreelancers, cli
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
                   <StatCard label="A pagar (freelancers)" value={fmtBRL(totalPendente)} accent="#B9862E" />
                   <StatCard label="Já pago" value={fmtBRL(totalPago)} accent="#566B4F" />
+                  <StatCard label="A receber (clientes)" value={fmtBRL(totalAReceberGeral)} accent={COR_PRODUTORA} onClick={() => setVerAReceber(true)} />
                 </div>
 
                 <div
