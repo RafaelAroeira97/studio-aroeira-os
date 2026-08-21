@@ -2837,18 +2837,30 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
   const recebidoRecorrente = mensalidadesAteAgora.filter((m) => m.pago).reduce((s, m) => s + (Number(m.valor) || 0), 0);
   const marcasComContrato = clientesCadastro.filter((c) => c.clienteMensal || c.apenasMensal).length;
 
-  const total = producoesFaturaveis.reduce((s, p) => s + totalProducao(p, precos), 0) + totalHistorico + receitaMensalRecorrente;
-  const recebido =
+  const totalEstudio = producoesFaturaveis.reduce((s, p) => s + totalProducao(p, precos), 0) + totalHistorico + receitaMensalRecorrente;
+  const recebidoEstudio =
     producoesFaturaveis.filter((p) => p.pagamentoStatus === "Pago").reduce((s, p) => s + totalProducao(p, precos), 0) +
     totalHistorico +
     recebidoRecorrente;
-  const aberto = total - recebido;
+  const abertoEstudio = totalEstudio - recebidoEstudio;
 
   const todosOsPagamentosFuncionarios = funcionarios.flatMap((f) => (f.pagamentos || []).map((p) => ({ ...p, funcionario: f.nome })));
-  const totalDespesas =
+  const totalDespesasEstudio =
     todosOsPagamentosFuncionarios.reduce((s, p) => s + (Number(p.valor) || 0), 0) +
     despesasGerais.reduce((s, d) => s + (Number(d.valor) || 0), 0);
-  const lucro = total - totalDespesas;
+  const lucroEstudio = totalEstudio - totalDespesasEstudio;
+
+  const totalProdutora = eventos.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
+  const recebidoProdutora = eventos.reduce((s, ev) => s + recebidoEvento(ev), 0);
+  const abertoProdutora = eventos.reduce((s, ev) => s + aReceberEvento(ev), 0);
+  const totalDespesasProdutora = eventos.reduce((s, ev) => s + totalCaches(ev) + totalDespesasEvento(ev) + valorNotaFiscalCalculado(ev), 0);
+  const lucroProdutora = eventos.reduce((s, ev) => s + lucroEvento(ev), 0);
+
+  const total = totalEstudio + totalProdutora;
+  const recebido = recebidoEstudio + recebidoProdutora;
+  const aberto = abertoEstudio + abertoProdutora;
+  const totalDespesas = totalDespesasEstudio + totalDespesasProdutora;
+  const lucro = lucroEstudio + lucroProdutora;
 
   const producoesReais = producoes.filter((p) => p.tipo !== "Histórico (importado)");
 
@@ -3030,27 +3042,102 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
 
   return (
     <div>
-      <SectionTitle title="Resumo geral" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px,1fr))", gap: 12, marginBottom: 26 }}>
-        <StatCard label="Faturado (total)" value={fmtBRL(total)} sub={receitaMensalRecorrente > 0 ? `inclui ${fmtBRL(receitaMensalRecorrente)} recorrente` : null} />
+      <SectionTitle title="Resumo geral — Estúdio + Produtora" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px,1fr))", gap: 12, marginBottom: 20 }}>
+        <StatCard label="Faturado (total)" value={fmtBRL(total)} />
         <StatCard label="Recebido" value={fmtBRL(recebido)} accent="#566B4F" />
         <StatCard label="Em aberto" value={fmtBRL(aberto)} accent="#B9862E" onClick={() => setMostrarAberto(true)} />
         <StatCard label="Despesas (total)" value={fmtBRL(totalDespesas)} accent="#A83B2E" />
         <StatCard label="Lucro estimado" value={fmtBRL(lucro)} accent={lucro >= 0 ? "#566B4F" : "#A83B2E"} />
-        {receitaMensalRecorrente > 0 && (
-          <StatCard
-            label="Receita mensal recorrente"
-            value={fmtBRL(receitaMensalRecorrente)}
-            sub={`${marcasComContrato} marca(s) com contrato fixo — já incluída no faturado`}
-            accent="#7A2E22"
-            onClick={() => setMostrarRecorrente(true)}
-          />
-        )}
       </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 26 }}>
+        <div>
+          <div className="font-mono" style={{ fontSize: 11, color: "#7A2E22", textTransform: "uppercase", marginBottom: 8, fontWeight: 700 }}>
+            🏠 Estúdio
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            <Card style={{ padding: "10px 14px" }}>
+              <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>Faturado</div>
+              <div className="font-display" style={{ fontSize: 18, fontWeight: 600 }}>
+                {fmtBRL(totalEstudio)}
+                {receitaMensalRecorrente > 0 && (
+                  <span
+                    className="font-mono"
+                    style={{ fontSize: 10, color: "#8A7F6E", fontWeight: 500, marginLeft: 8, cursor: "pointer", textDecoration: "underline" }}
+                    onClick={() => setMostrarRecorrente(true)}
+                  >
+                    inclui {fmtBRL(receitaMensalRecorrente)} recorrente
+                  </span>
+                )}
+              </div>
+            </Card>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Card style={{ padding: "10px 14px", flex: 1 }}>
+                <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>Recebido</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#566B4F" }}>{fmtBRL(recebidoEstudio)}</div>
+              </Card>
+              <Card style={{ padding: "10px 14px", flex: 1 }}>
+                <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>Em aberto</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#B9862E" }}>{fmtBRL(abertoEstudio)}</div>
+              </Card>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Card style={{ padding: "10px 14px", flex: 1 }}>
+                <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>Despesas</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#A83B2E" }}>{fmtBRL(totalDespesasEstudio)}</div>
+              </Card>
+              <Card style={{ padding: "10px 14px", flex: 1 }}>
+                <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>Lucro</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: lucroEstudio >= 0 ? "#566B4F" : "#A83B2E" }}>{fmtBRL(lucroEstudio)}</div>
+              </Card>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="font-mono" style={{ fontSize: 11, color: "#33475B", textTransform: "uppercase", marginBottom: 8, fontWeight: 700 }}>
+            🎞️ Produtora
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            <Card style={{ padding: "10px 14px", borderColor: "#C7D3DA" }}>
+              <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>Faturado</div>
+              <div className="font-display" style={{ fontSize: 18, fontWeight: 600 }}>{fmtBRL(totalProdutora)}</div>
+            </Card>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Card style={{ padding: "10px 14px", flex: 1, borderColor: "#C7D3DA" }}>
+                <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>Recebido</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#566B4F" }}>{fmtBRL(recebidoProdutora)}</div>
+              </Card>
+              <Card style={{ padding: "10px 14px", flex: 1, borderColor: "#C7D3DA" }}>
+                <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>Em aberto</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#B9862E" }}>{fmtBRL(abertoProdutora)}</div>
+              </Card>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Card style={{ padding: "10px 14px", flex: 1, borderColor: "#C7D3DA" }}>
+                <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>Despesas</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#A83B2E" }}>{fmtBRL(totalDespesasProdutora)}</div>
+              </Card>
+              <Card style={{ padding: "10px 14px", flex: 1, borderColor: "#C7D3DA" }}>
+                <div className="font-mono" style={{ fontSize: 10, color: "#8A7F6E", textTransform: "uppercase" }}>Lucro</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: lucroProdutora >= 0 ? "#566B4F" : "#A83B2E" }}>{fmtBRL(lucroProdutora)}</div>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {marcasComContrato > 0 && (
+        <p style={{ fontSize: 11.5, color: "#8A7F6E", marginTop: -14, marginBottom: 24 }}>
+          {marcasComContrato} marca(s) com contrato fixo mensal — total já incluído no faturado do Estúdio.
+        </p>
+      )}
 
       {mostrarAberto && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(43,36,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 55 }} onClick={() => setMostrarAberto(false)}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFDF9", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%", maxHeight: "82vh", overflowY: "auto" }}>
+
             <h3 className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 0 }}>Pagamentos em aberto</h3>
             <div style={{ display: "grid", gap: 8 }}>
               {producoesFaturaveis.filter((p) => ["Em aberto", "Parcialmente pago"].includes(p.pagamentoStatus)).map((p) => (
@@ -3131,6 +3218,10 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         </div>
       </Card>
 
+      <p style={{ fontSize: 11.5, color: "#8A7F6E", margin: "-6px 0 12px" }}>
+        Toca num mês pra ver o detalhe completo (Estúdio, Produtora, despesas e lançamentos).
+      </p>
+
       <div style={{ display: "grid", gap: 8, marginBottom: 26 }}>
         {dadosMesFinanceiro.map((d) => (
           <Card
@@ -3138,18 +3229,13 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
             onClick={() => setMesDetalhe(d)}
             style={{ padding: "12px 14px", opacity: d.total === 0 && d.despesas === 0 ? 0.5 : 1, cursor: "pointer" }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "4px 12px" }}>
               <div className="font-mono" style={{ fontSize: 11, color: "#8A7F6E", textTransform: "uppercase" }}>{d.mes}</div>
-              <div style={{ fontSize: 12.5, color: "#8A7F6E" }}>
-                Lucro: <b style={{ color: d.lucro >= 0 ? "#566B4F" : "#A83B2E", fontSize: 14 }}>{fmtBRL(d.lucro)}</b>
+              <div style={{ display: "flex", gap: 16, fontSize: 13.5, flexWrap: "wrap" }}>
+                <span>Total: <b>{fmtBRL(d.total)}</b></span>
+                <span>Em aberto: <b style={{ color: "#B9862E" }}>{fmtBRL(d.emAberto)}</b></span>
+                <span>Lucro: <b style={{ color: d.lucro >= 0 ? "#566B4F" : "#A83B2E" }}>{fmtBRL(d.lucro)}</b></span>
               </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 13 }}>
-              <div>Total: <b>{fmtBRL(d.total)}</b></div>
-              <div>Em aberto: <b style={{ color: "#B9862E" }}>{fmtBRL(d.emAberto)}</b></div>
-              <div>🏠 Estúdio: <b>{fmtBRL(d.estudio)}</b></div>
-              <div>🎞️ Produtora: <b>{d.produtora ? fmtBRL(d.produtora) : "—"}</b></div>
-              <div>Despesas: <b style={{ color: "#A83B2E" }}>{fmtBRL(d.despesas)}</b></div>
             </div>
           </Card>
         ))}
