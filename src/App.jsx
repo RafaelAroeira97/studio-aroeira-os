@@ -79,6 +79,18 @@ const totalRecebidoEvento = (ev) => (ev.parcelas || []).filter((p) => p.recebida
 const recebidoEvento = (ev) =>
   (ev.parcelas || []).length > 0 ? totalRecebidoEvento(ev) : ev.status === "Concluído" ? Number(ev.valorFaturado) || 0 : 0;
 const aReceberEvento = (ev) => (Number(ev.valorFaturado) || 0) - recebidoEvento(ev);
+// quanto está pendente de receber da Produtora num mês específico, olhando o VENCIMENTO
+// de cada parcela (não a data do evento) — assim uma parcela que vence em março só entra
+// em março, mesmo que o evento tenha sido em janeiro.
+const pendenciasProdutoraDoMes = (todosEventos, mesStr) =>
+  todosEventos.reduce((s, ev) => {
+    if ((ev.parcelas || []).length > 0) {
+      return s + ev.parcelas.filter((p) => !p.recebida && (p.vencimento || "").startsWith(mesStr)).reduce((s2, p) => s2 + (Number(p.valor) || 0), 0);
+    }
+    // sem parcelas cadastradas: não tem como saber o vencimento, usa o mês do evento como aproximação
+    if (!(ev.dataInicio || "").startsWith(mesStr)) return s;
+    return s + aReceberEvento(ev);
+  }, 0);
 const PERCENTUAL_NOTA_FISCAL = 0.07;
 const valorNotaFiscalCalculado = (ev) => (ev.emiteNotaFiscal ? Math.round((Number(ev.valorFaturado) || 0) * PERCENTUAL_NOTA_FISCAL * 100) / 100 : 0);
 const lucroEvento = (ev) => (Number(ev.valorFaturado) || 0) - totalCaches(ev) - totalDespesasEvento(ev) - valorNotaFiscalCalculado(ev);
@@ -669,102 +681,31 @@ export default function StudioAroeiraOS() {
     })();
   }, [loaded, isAdmin]);
 
-  const salvarPerfis = useCallback(async (novos) => {
-    setPerfis(novos);
+  // Helper único usado por todas as funções "salvarX" abaixo — se a gravação no
+  // Supabase falhar (rede, permissão, etc.), agora storage.set lança erro de verdade,
+  // e aqui a gente PEGA esse erro e avisa a pessoa, em vez de mostrar "✓ Salvo" por engano.
+  const salvarCompartilhado = useCallback(async (chave, valor, setter, ehTexto = false) => {
+    setter(valor);
     try {
-      await storage.set("perfis", JSON.stringify(novos), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
-
-  const salvarClientesCadastro = useCallback(async (novos) => {
-    setClientesCadastro(novos);
-    try {
-      await storage.set("clientes-cadastro", JSON.stringify(novos), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
-
-  const salvarSegmentosDisponiveis = useCallback(async (novos) => {
-    setSegmentosDisponiveis(novos);
-    try {
-      await storage.set("segmentos-disponiveis", JSON.stringify(novos), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
-
-  const salvarCenariosDisponiveis = useCallback(async (novos) => {
-    setCenariosDisponiveis(novos);
-    try {
-      await storage.set("cenarios-disponiveis", JSON.stringify(novos), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
-
-  const salvarWebhookSheets = useCallback(async (url) => {
-    setWebhookSheets(url);
-    try {
-      await storage.set("webhook-sheets", url, true);
-    } catch (e) {}
-  }, []);
-
-  const salvarModelos = useCallback(async (novos) => {
-    setModelos(novos);
-    try {
-      await storage.set("modelos", JSON.stringify(novos), true);
+      await storage.set(chave, ehTexto ? valor : JSON.stringify(valor), true);
       mostrarSalvo();
     } catch (e) {
-      setErro("Não foi possível salvar o modelo. Tente novamente.");
+      setErro("⚠️ Não foi possível salvar agora — confira sua internet e tente de novo. As últimas mudanças podem não ter sido gravadas pra todo mundo ver.");
     }
   }, []);
 
-  const salvarHistoricoFinanceiro = useCallback(async (novos) => {
-    setHistoricoFinanceiro(novos);
-    try {
-      await storage.set("historico-financeiro", JSON.stringify(novos), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
-
-  const salvarFuncionarios = useCallback(async (novos) => {
-    setFuncionarios(novos);
-    try {
-      await storage.set("funcionarios", JSON.stringify(novos), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
-
-  const salvarDespesasGerais = useCallback(async (novas) => {
-    setDespesasGerais(novas);
-    try {
-      await storage.set("despesas-gerais", JSON.stringify(novas), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
-
-  const salvarEventos = useCallback(async (novos) => {
-    setEventos(novos);
-    try {
-      await storage.set("eventos", JSON.stringify(novos), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
-
-  const salvarFreelancers = useCallback(async (novos) => {
-    setFreelancers(novos);
-    try {
-      await storage.set("freelancers-produtora", JSON.stringify(novos), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
-
-  const salvarClientesProdutora = useCallback(async (novos) => {
-    setClientesProdutora(novos);
-    try {
-      await storage.set("clientes-produtora", JSON.stringify(novos), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
+  const salvarPerfis = useCallback((novos) => salvarCompartilhado("perfis", novos, setPerfis), [salvarCompartilhado]);
+  const salvarClientesCadastro = useCallback((novos) => salvarCompartilhado("clientes-cadastro", novos, setClientesCadastro), [salvarCompartilhado]);
+  const salvarSegmentosDisponiveis = useCallback((novos) => salvarCompartilhado("segmentos-disponiveis", novos, setSegmentosDisponiveis), [salvarCompartilhado]);
+  const salvarCenariosDisponiveis = useCallback((novos) => salvarCompartilhado("cenarios-disponiveis", novos, setCenariosDisponiveis), [salvarCompartilhado]);
+  const salvarWebhookSheets = useCallback((url) => salvarCompartilhado("webhook-sheets", url, setWebhookSheets, true), [salvarCompartilhado]);
+  const salvarModelos = useCallback((novos) => salvarCompartilhado("modelos", novos, setModelos), [salvarCompartilhado]);
+  const salvarHistoricoFinanceiro = useCallback((novos) => salvarCompartilhado("historico-financeiro", novos, setHistoricoFinanceiro), [salvarCompartilhado]);
+  const salvarFuncionarios = useCallback((novos) => salvarCompartilhado("funcionarios", novos, setFuncionarios), [salvarCompartilhado]);
+  const salvarDespesasGerais = useCallback((novas) => salvarCompartilhado("despesas-gerais", novas, setDespesasGerais), [salvarCompartilhado]);
+  const salvarEventos = useCallback((novos) => salvarCompartilhado("eventos", novos, setEventos), [salvarCompartilhado]);
+  const salvarFreelancers = useCallback((novos) => salvarCompartilhado("freelancers-produtora", novos, setFreelancers), [salvarCompartilhado]);
+  const salvarClientesProdutora = useCallback((novos) => salvarCompartilhado("clientes-produtora", novos, setClientesProdutora), [salvarCompartilhado]);
 
   const registrarNotificacao = useCallback((tipo, mensagem, destinatarios = []) => {
     setNotificacoes((atual) => {
@@ -856,23 +797,9 @@ export default function StudioAroeiraOS() {
     } catch (e) {}
   }, []);
 
-  const salvarProducoes = useCallback(async (novas) => {
-    setProducoes(novas);
-    try {
-      await storage.set("producoes", JSON.stringify(novas), true);
-      mostrarSalvo();
-    } catch (e) {
-      setErro("Não foi possível salvar. Tente novamente.");
-    }
-  }, []);
+  const salvarProducoes = useCallback((novas) => salvarCompartilhado("producoes", novas, setProducoes), [salvarCompartilhado]);
 
-  const salvarPrecos = useCallback(async (novos) => {
-    setPrecos(novos);
-    try {
-      await storage.set("precos", JSON.stringify(novos), true);
-      mostrarSalvo();
-    } catch (e) {}
-  }, []);
+  const salvarPrecos = useCallback((novos) => salvarCompartilhado("precos", novos, setPrecos), [salvarCompartilhado]);
 
   // ---- CRUD produções ----
   const novaProducao = () => {
@@ -3017,14 +2944,14 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
     const eventosMes = eventos.filter((ev) => (ev.dataInicio || "").startsWith(mesStr));
     const produtoraFaturado = eventosMes.reduce((s, ev) => s + (Number(ev.valorFaturado) || 0), 0);
     const produtoraLucro = eventosMes.reduce((s, ev) => s + lucroEvento(ev), 0);
-    const produtoraRecebido = eventosMes.reduce((s, ev) => s + recebidoEvento(ev), 0);
+    const produtoraPendenteMes = pendenciasProdutoraDoMes(eventos, mesStr);
     return {
       mes: nome,
       mesStr,
       total: faturado + produtoraFaturado,
       estudio: faturado,
       produtora: produtoraFaturado,
-      emAberto: faturado + produtoraFaturado - (recebido + produtoraRecebido),
+      emAberto: (faturado - recebido) + produtoraPendenteMes,
       despesas: despesasMes,
       lucro: faturado - despesasMes + produtoraLucro,
     };
@@ -3678,10 +3605,14 @@ function Financeiro({ producoes, precos, clientesCadastro, historicoFinanceiro, 
         const eventosMes = eventos.filter((ev) => (ev.dataInicio || "").startsWith(mesDetalhe.mesStr));
         const pagamentosFuncionariosMes = todosOsPagamentosFuncionarios.filter((p) => p.mes === mesDetalhe.mesStr);
         const despesasGeraisMes = despesasGerais.filter((d) => d.mes === mesDetalhe.mesStr);
-        const parcelasAbertoMes = eventosMes.flatMap((ev) => {
+        const parcelasAbertoMes = eventos.flatMap((ev) => {
           if ((ev.parcelas || []).length > 0) {
-            return ev.parcelas.filter((p) => !p.recebida).map((p) => ({ ...p, evento: ev.nome }));
+            return ev.parcelas
+              .filter((p) => !p.recebida && (p.vencimento || "").startsWith(mesDetalhe.mesStr))
+              .map((p) => ({ ...p, evento: ev.nome }));
           }
+          // sem parcelas cadastradas: usa o mês do evento como aproximação
+          if (!(ev.dataInicio || "").startsWith(mesDetalhe.mesStr)) return [];
           const pendente = aReceberEvento(ev);
           return pendente > 0 ? [{ id: ev.id, valor: pendente, vencimento: null, evento: ev.nome }] : [];
         });
